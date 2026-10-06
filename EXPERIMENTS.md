@@ -323,3 +323,44 @@ Results are unchanged; verification is below.
 - The regenerated track lists match the old ones (same tracks, order, audio files and splits).
 - Training, evaluation, checkpoint saving and resume work through the new CLI.
 - The full `sweep.py` output on E8 is identical to `runs/sweep_tabmodel_mid.json`.
+
+### A1 — Error analysis of E10 (`scripts/analyze_errors.py`) — 2026-10-06
+- **Command:** `python scripts/analyze_errors.py --checkpoint runs/tabmodel_mid_gaps/best.pt --out runs/errors_tabmodel_mid_gaps.json`
+  (about 5 min). Validation and train subsets only; no test data.
+- **Protocol:** full tracks, default note extraction, greedy matching (onset ±50 ms), notes pooled over tracks
+  (so numbers differ slightly from the per-track means logged in training). Each miss / false note gets the first
+  category that applies.
+
+| | GuitarSet val | GuitarSet train (1/4) | GAPS val | GAPS train (1/9) |
+|---|---|---|---|---|
+| pitch P / R / F1 | .798 / .832 / .815 | .862 / .923 / .891 | .819 / .858 / .838 | .823 / .833 / .828 |
+| string/fret F1 | .798 | .891 | – | – |
+| string correct, given correct pitch | .960 | .998 | .859 (vs score fingering) | .916 |
+| frame multi-pitch F1 | .878 | .937 | – | – |
+| onset error median / share ≤ 25 ms | 4.8 ms / .97 | 4.9 ms / .98 | 6.0 ms / .77 | 4.3 ms / .97 |
+
+**Missed notes** (share of misses): GuitarSet val — not heard at all .31, found 50–150 ms off .24, re-attack of a
+ringing same pitch merged .13, semitone/tone confusion .10, weak frame evidence .08, chord collision .07,
+octave/harmonic .05, heard but onset < 0.6 only .025. GAPS val — not heard at all .41, weak evidence .19,
+heard but onset < 0.6 .09, chord collision .09, others ≤ .07.
+Miss rate by context (GuitarSet val): notes < 120 ms .25–.36 vs .10–.18 for longer notes. GAPS val: .40 when 4+ notes sound.
+
+**False notes** (share of false notes): a new attack of a pitch that is still ringing in the reference is the largest class,
+.33 on GuitarSet and .58 on GAPS. Almost all of them are real onset peaks ≥ 0.6, a median 0.29 s (GAPS 0.44 s) after the
+reference attack, not legato splits. Then timing 50–150 ms (.21 / .09), octave/harmonic (.15 / .11), semitone (.12 / .10).
+
+**Worst GuitarSet val tracks:** `04_BN3-154-E_comp` (.22, fast bossa comping; matches spread over ±300 ms),
+`04_Jazz1-200-B_comp` (.31); every other track is ≥ .67. Comping .79 vs solo .86 pitch F1.
+
+**Findings:**
+- **Strings are nearly solved on GuitarSet:** given the right pitch, the string is right 96% of the time, so a perfect fingering
+  step could add at most about .017 string/fret F1. The errors are pitch and onset errors.
+- **GuitarSet is data-limited:** train .891 vs validation .815 (an unseen player).
+- **GAPS is underfitted:** train .828 vs validation .838, with no generalisation gap. A larger model or longer training
+  should help here; label noise (alignment, unmatched notes) also caps it.
+- **Thresholds won't recover the misses:** only about 2.5% (GuitarSet) / 9% (GAPS) of misses have frame evidence and a weak
+  onset, consistent with E9.
+- **Note decoding loses information:** frame multi-pitch F1 (.878) is well above note pitch F1 (.815). Re-attacks (merged or
+  spurious) and short notes are the weak points of the onset head plus the hand-written extraction.
+- **Even on training tracks, GuitarSet note F1 is only .89:** 30% of those misses are 50–150 ms timing differences, so part of
+  the ceiling is annotation noise rather than the model.

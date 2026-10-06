@@ -171,6 +171,7 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 | `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
 | `train.py`, `train_mid.sh`, `train_mid_gaps.sh` | Training (the `.sh` files are the exact E8 / E10 runs). |
 | `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
+| `analyze_errors.py` | Error breakdown on validation and train subsets: miss / false-note categories, string accuracy, generalisation gap. |
 
 ---
 
