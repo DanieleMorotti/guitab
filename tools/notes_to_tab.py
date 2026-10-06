@@ -1,6 +1,6 @@
 """Turn note events in seconds into a quantized Guitar Pro tab, following the detected beats.
 
-Shared back end for the note-event transcribers (Basic Pitch, the frame/onset tab model):
+Back end of the transcriber:
   1. beat tracking (Beat This!) gives beat and downbeat times;
   2. every time is mapped to a fractional beat index by interpolating between beats, so the
      tab follows tempo drift instead of a single fixed tempo; tick 0 is put on a downbeat;

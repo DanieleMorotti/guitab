@@ -6,12 +6,11 @@ MuseScore or any online gp5 player.
 The model reads a harmonic constant-Q spectrogram and predicts, at every frame (11.6 ms), the fret played on each of the
 6 strings plus note attacks. Notes are then snapped to the beats found by a beat tracker and written out as a tab.
 
-Engines:
+Results:
 
-| Engine | What it is | GuitarSet test, string+fret F1 (±50 ms) | GAPS test, fingerstyle pitch F1 |
+| Model | What it is | GuitarSet test, string+fret F1 (±50 ms) | GAPS test, fingerstyle pitch F1 |
 |---|---|---|---|
-| `tabmodel` (default) | Our CQT frame/onset tab model, trained on GuitarSet + GAPS (`runs/tabmodel_mid_gaps/best.pt`) | **0.826** | **0.787** |
-| `basic_pitch` | Spotify Basic Pitch notes + our fingering optimiser (no training) | 0.32 (pitch 0.71) | – |
+| tab model | Our CQT frame/onset tab model, trained on GuitarSet + GAPS (`runs/tabmodel_mid_gaps/best.pt`) | **0.826** | **0.787** |
 
 The full history (including the original Whisper / Audio2Tab approach, which was replaced because it scored 0.13),
 every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a new entry there for every new experiment.
@@ -24,7 +23,7 @@ every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a 
 # 1) extract mono audio from a video or any audio file
 ffmpeg -i my_video.mov -ac 1 -ar 22050 out/my_video/my_video.wav
 
-# 2) transcribe (default engine and checkpoint = best model)
+# 2) transcribe (default checkpoint = best model)
 .venv/bin/python tools/transcribe.py --audio out/my_video/my_video.wav --out_dir out/my_video
 ```
 
@@ -40,7 +39,6 @@ Options of `tools/transcribe.py`:
 | `--tempo 90` | Uses a fixed tempo. The default `auto` follows the beats detected by Beat This!. |
 | `--grid 120` | Quantisation grid in ticks (960 = quarter): 240 = 16th notes (default), 120 = 32nd notes. |
 | `--checkpoint PATH` | Another tab-model checkpoint, e.g. `runs/tabmodel_mid/best.pt` (GuitarSet only). |
-| `--engine basic_pitch` | Uses Basic Pitch (runs in `.venv_bp`; strings are chosen by the fingering optimiser). |
 | `--name X` | Output file stem. |
 
 Inference needs about 1–2 GB of GPU memory and takes under a minute for a 4-minute song on an M-series Mac.
@@ -54,7 +52,6 @@ guitab/
 ├── README.md, EXPERIMENTS.md     this file / experiment log
 ├── tools/                        all scripts (section 5)
 ├── .venv/                        main Python environment (requirements.txt)
-├── .venv_bp/                     separate environment for Basic Pitch (conflicting dependencies)
 ├── data/
 │   ├── guitarset/                GuitarSet: annotation/ (JAMS), audio_mic/, tokens/ (reference tabs)
 │   ├── guitarset.csv             track list + split (players 00-03 train, 04 validation, 05 test)
@@ -62,7 +59,6 @@ guitab/
 │   ├── gaps/                     GAPS: zip, safe/ (case-safe extraction), audio/, labels/, labels_summary.csv
 │   ├── tabmodel_cache/           cached CQT features + frame labels (.npz) used for training/evaluation
 │   ├── eval_chunks.json          frozen GuitarSet validation/test chunks used by every reported number
-│   ├── basic_pitch/              cached Basic Pitch notes
 │   ├── models/                   Beat This! beat-tracker checkpoint
 │   └── certs/                    macOS trusted certificates (corporate HTTPS proxy, section 6)
 ├── runs/
@@ -80,18 +76,14 @@ guitab/
 All commands run from `guitab/` with Python 3.11.
 
 ```bash
-# main environment: exact versions in requirements.txt (direct dependencies listed in requirements.in)
+# exact versions in requirements.txt (its header lists the direct dependencies)
 uv venv .venv --python 3.11
 uv pip install --python .venv/bin/python -r requirements.txt
 
-# Basic Pitch environment (only for --engine basic_pitch; conflicting dependencies)
-uv venv .venv_bp --python 3.11
-uv pip install --python .venv_bp/bin/python "basic-pitch[onnx]" "setuptools<70"
 ```
 
 - **Versions:** torch 2.10, librosa 0.11, beat-this (git commit pinned in `requirements.txt`), music21 10.5, pretty-midi 0.2.11,
-  pyguitarpro 0.9.3, basic-pitch 0.4.
-- **Old environment:** `env_freeze_audio2tab_old.txt` is the full freeze of the former Audio2Tab environment, kept for reference.
+  pyguitarpro 0.9.3.
 - **Hardware:** on a Mac, everything runs on MPS (Apple GPU) automatically.
 
 ---
@@ -174,7 +166,6 @@ Rule: choose checkpoints and settings on validation (GuitarSet player 04, GAPS v
 | `tabmodel_infer.py` | Tab model sliding-window prediction + note extraction (`DEFAULT_PARAMS`). |
 | `notes_to_tab.py` | Notes in seconds → beat-following quantisation (Beat This!) → tab tokens. |
 | `fingering.py` | Viterbi fingering optimiser (string/fret choice for given pitches). |
-| `run_basic_pitch.py` | Runs Basic Pitch (in `.venv_bp`) and caches notes in `data/basic_pitch/`. |
 | `dadagp_utils/` | Token ↔ Guitar Pro conversion (writes the `.gp5`), copied from Audio2Tab / DadaGP. |
 | **Model and training** | |
 | `tabmodel.py` | Model definition (harmonic-stacked CQT → CNN → transformer → tab/onset/pitch heads; sizes `mid`, `large`). |

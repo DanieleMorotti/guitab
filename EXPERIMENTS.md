@@ -270,3 +270,12 @@ The pipeline used only three things from `Audio2Tab/`, so the repo was removed a
 - A short training run with GAPS works, and all scripts import.
 
 Audio2Tab has no licence file. The copied code keeps attribution headers; check licences before publishing anything.
+
+### Simplification — 2026-10-06
+- Removed the Basic Pitch engine (E7 baseline, outperformed by the tab model everywhere): `tools/run_basic_pitch.py`,
+  the `--engine` option of `transcribe.py`, the `.venv_bp` environment and the `data/basic_pitch` cache.
+  E7 numbers remain above as the record.
+- Requirements reduced to one file, `requirements.txt`: exact pins, with the direct dependencies listed in its header.
+  `requirements.in` and the old Audio2Tab freeze were dropped.
+- The project is now a git repository. Data, weights, outputs and environments are excluded (`.gitignore`);
+  only code, docs and the frozen `data/eval_chunks.json` are tracked.
