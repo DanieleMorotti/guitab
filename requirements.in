@@ -1,0 +1,13 @@
+# Direct dependencies of guitab (main environment, .venv). Exact versions: requirements.txt
+# Rebuild:  uv venv .venv --python 3.11 && uv pip install --python .venv/bin/python -r requirements.txt
+torch
+numpy
+librosa
+soundfile
+beat-this
+pyguitarpro
+pyyaml
+tqdm
+pretty_midi
+music21
+yt-dlp

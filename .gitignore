@@ -1,0 +1,15 @@
+# Data, model weights, outputs and environments are not versioned: the code here rebuilds them.
+data/*
+!data/eval_chunks.json
+runs/*
+!runs/*.sh
+out/
+.venv/
+.venv_bp/
+*.mov
+*.mp4
+*.wav
+*.pt
+__pycache__/
+*.pyc
+.DS_Store
