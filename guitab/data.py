@@ -4,6 +4,8 @@ Labels per frame (11.6 ms) and string (column order STRINGS, low E .. high E):
   tab[t, s]   0 = string silent, 1 + fret for fret 0..19, -100 = ignore (fret > 19 / masked)
   onset[t, s] 1 on the frame closest to a note attack (-1 = ignore)
   unk[t]      1 while a note whose string is unknown sounds (GAPS)
+With load_split(..., targets="regression") (E11), onset is replaced by a soft attack target and an
+offset (release) target is added, both from the exact note times (regression_targets).
 Tracks: GuitarSet (data/guitarset.csv), its pitch-shifted copies (data/guitarset_shift.csv) and the
 GAPS selection (gaps_selection). Splits: train / validation / test (GuitarSet players 00-03 / 04 / 05),
 gaps_train / gaps_validation / gaps_test.
@@ -56,6 +58,41 @@ def frame_labels(notes, n_frames):
         win = onset[max(a - 1, 0):a + 2]
         win[win == 0] = -1
     return tab, onset, unk
+
+
+def regression_targets(notes, n_frames, width=4, offsets=True):
+    """Kong et al.-style targets: onset/offset [T, 6] float32 = max(0, 1 - |t - event| / width) around each exact
+    attack / release time (in frames), -1 = ignore.
+
+    Notes with column None (string unknown, GAPS) set strings not otherwise targeted to ignore around their events.
+    offsets=False ignores every release (GAPS: MIDI durations come from score note values, not from the string)."""
+    onset = np.zeros((n_frames, 6), dtype=np.float32)
+    offset = np.zeros((n_frames, 6), dtype=np.float32) if offsets else np.full((n_frames, 6), -1.0, dtype=np.float32)
+    unknown = []
+
+    def bump(target, col, centre):
+        lo, hi = max(int(np.ceil(centre - width)), 0), min(int(np.floor(centre + width)), n_frames - 1)
+        for t in range(lo, hi + 1):
+            target[t, col] = max(target[t, col], 1.0 - abs(t - centre) / width)
+
+    for on, off, col, fret in notes:
+        if on * FPS >= n_frames:
+            continue
+        if col is None:
+            unknown.append((on, off))
+            continue
+        bump(onset, col, on * FPS)
+        if offsets:
+            bump(offset, col, off * FPS)
+    w = int(np.ceil(width))
+    for on, off in unknown:
+        for target, centre, used in ((onset, on * FPS, True), (offset, off * FPS, offsets)):
+            if not used:
+                continue
+            a, b = max(int(round(centre)) - w, 0), min(int(round(centre)) + w + 1, n_frames)
+            seg = target[a:b]
+            seg[seg == 0] = -1.0
+    return onset, offset
 
 
 def gaps_selection(min_match=0.5, min_content=0.9):
@@ -113,13 +150,19 @@ def cache_one(item):
     return name
 
 
-def load_split(split, include_shift=True):
+def load_split(split, include_shift=True, targets="frame"):
+    """targets: "frame" (cached onset frames) or "regression" (regression_targets onset + offset, built from the labels)."""
     items = [t for t in tracks() if t[4] == split and (include_shift or t[3] == 0)]
     data = []
     for name, audio, labels, shift, _ in items:
         z = np.load(CACHE / f"{name}.npz")
         onset = z["onset"].astype(np.int8)
         unk = z["unk"] if "unk" in z.files else np.zeros(len(z["feat"]), dtype=np.uint8)
-        data.append({"name": name, "audio": audio, "labels": labels, "shift": shift, "feat": z["feat"], "tab": z["tab"],
-                     "onset": onset, "unk": unk, "source": "gaps" if name.startswith("gaps_") else "guitarset"})
+        tr = {"name": name, "audio": audio, "labels": labels, "shift": shift, "feat": z["feat"], "tab": z["tab"],
+              "onset": onset, "unk": unk, "source": "gaps" if name.startswith("gaps_") else "guitarset"}
+        if targets == "regression":
+            gaps = labels.endswith(".json")
+            notes = gaps_notes(labels) if gaps else string_notes(labels, shift)
+            tr["onset"], tr["offset"] = regression_targets(notes, len(z["feat"]), offsets=not gaps)
+        data.append(tr)
     return data

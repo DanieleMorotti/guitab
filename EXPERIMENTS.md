@@ -399,3 +399,28 @@ Post-processing only, no retraining; tested on the E10 predictions, chosen on va
 - **Demo recording:** one duplicate removed (472 → 471 notes), `out/my_video/my_video_H_dedup.gp5`.
 - **Note:** training validation (`evaluate_guitarset` / `evaluate_gaps`) uses `DEFAULT_PARAMS`, so from E11 on the logged
   validation numbers include dedup; compare with the "after" figures above, not with E10's training log.
+
+### E11 — Precise attack targets + release head (`runs/tabmodel_mid_gaps_reg`) — RUNNING
+**Goal:** attack the error classes from A1 that a rule could not fix (D1): spurious and merged re-attacks of a ringing pitch,
+attacks 50–150 ms off, short notes. The backbone, data, sampling, augmentation, steps and seed are the same as E10.
+The change is only in what the heads learn and how notes are built:
+- **Attack head:** the target is a triangle, `max(0, 1 − |t − attack| / 4 frames)`, around the exact attack time
+  (Kong et al. 2021, high-resolution piano transcription), learned with plain BCE. E10 used 1 on the attack frame,
+  0.5 on its ±1 neighbours and positive weight 5.
+- **New release head** (6 outputs, about 3k parameters): the same triangle around each note's end, per string.
+  GAPS releases are ignored, because GAPS MIDI durations come from the score's note values, not from when the string stops.
+  GuitarSet ends come from the hexaphonic pickup.
+- **Unknown-string GAPS notes:** attack targets are ignored ±4 frames around their attack on strings not otherwise targeted.
+- **Note building** (`guitab/inference.py`, used only when a checkpoint has a release head):
+  - attack time refined within the frame by a parabola through the onset peak (`subframe`);
+  - a note also ends at a release peak ≥ `offset`.
+- **Old checkpoints are unaffected** (no release head → same path). Checked after the change:
+  - 3 seeded training batches with the model outputs and losses are identical;
+  - E10 validation chunks are identical (.7672 / .7465), and so is GAPS validation (.8824 / .8639);
+  - the demo tab is byte-identical.
+- **Command:** `nohup scripts/train_mid_gaps_reg.sh > runs/tabmodel_mid_gaps_reg.log 2>&1 &`
+  - 16k steps, batch 16, `--gaps_share 0.5 --gaps_tab_weight 0.5 --onset_target regression`;
+  - validation during training uses `{"onset": 0.4, "subframe": true}`, since triangle targets peak below 1;
+  - thresholds are tuned on validation after training (`evaluate.py --tune`, which also searches `offset` and `subframe`).
+- **Comparison point:** E10 + D1 on the same in-training protocol: GuitarSet validation string/fret .8127, pitch .8346;
+  GAPS validation pitch .8824, string agreement .8639. The final comparison uses tuned settings for both models.
