@@ -6,7 +6,9 @@ Notes are extracted per string:
     and `orphan` is enabled;
   - its fret is the argmax of the fret posterior averaged over its first frames;
   - it ends when the string goes silent, at the next onset on that string, or when the frame
-    fret changes for `legato` consecutive frames (hammer-on / pull-off / slide -> new note).
+    fret changes for `legato` consecutive frames (hammer-on / pull-off / slide -> new note);
+  - the same pitch started on two strings within `dedup` frames is one note played once: only the
+    note whose fret posterior (mean over its frames) is higher is kept (0 = off).
 """
 
 import numpy as np
@@ -17,7 +19,7 @@ from .guitar import OPEN_PITCH, STRINGS
 from .model import TabModel
 
 # tuned on GuitarSet validation (player 04) with scripts/evaluate.py --tune
-DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3}
+DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3, "dedup": 4}
 
 
 def load_model(checkpoint, device):
@@ -86,12 +88,34 @@ def extract_notes(tab, onset, params=None):
             if end - start >= 2 or start in peak_set:
                 score = float(max(o[start], active[start]))
                 notes.append({"onset": start / FPS, "offset": end / FPS, "string": string, "fret": fret,
-                              "pitch": OPEN_PITCH[string] + fret, "score": score})
+                              "pitch": OPEN_PITCH[string] + fret, "score": score,
+                              "fret_conf": float(tab[start:max(end, start + 1), col, fret + 1].mean())})
             # legato change: the next note starts where the fret changed (no onset needed)
             if end < t_total and end not in peak_set and active[end] > p["frame"]:
                 peak_set.add(end)
             t = max(end, start + 1)
-    return sorted(notes, key=lambda n: (n["onset"], n["string"]))
+    notes = sorted(notes, key=lambda n: (n["onset"], n["string"]))
+    if p["dedup"]:
+        notes = drop_duplicates(notes, p["dedup"] / FPS)
+    for n in notes:
+        del n["fret_conf"]
+    return notes
+
+
+def drop_duplicates(notes, window):
+    """Same pitch starting on two strings within `window` s: keep the note with the higher fret posterior."""
+    keep = [True] * len(notes)
+    for i, a in enumerate(notes):
+        for j in range(i + 1, len(notes)):
+            b = notes[j]
+            if b["onset"] - a["onset"] > window:
+                break
+            if keep[i] and keep[j] and a["pitch"] == b["pitch"] and a["string"] != b["string"]:
+                if a["fret_conf"] >= b["fret_conf"]:
+                    keep[j] = False
+                else:
+                    keep[i] = False
+    return [n for n, k in zip(notes, keep) if k]
 
 
 def transcribe_file(checkpoint, audio_path, device, params=None):

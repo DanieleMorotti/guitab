@@ -364,3 +364,38 @@ reference attack, not legato splits. Then timing 50–150 ms (.21 / .09), octave
   spurious) and short notes are the weak points of the onset head plus the hand-written extraction.
 - **Even on training tracks, GuitarSet note F1 is only .89:** 30% of those misses are 50–150 ms timing differences, so part of
   the ceiling is annotation noise rather than the model.
+
+### D1 — Note extraction: drop same-pitch duplicates on two strings — 2026-10-06, ADOPTED
+Post-processing only, no retraining; tested on the E10 predictions, chosen on validation, then test once.
+- **Problem (from A1):** the model sometimes starts the same pitch on two strings at once (unsure which string),
+  which gives one true note plus one false note. This is frequent on GAPS: 924 known validation notes had such a pair.
+- **Rule** (`dedup` in `DEFAULT_PARAMS`, `guitab/inference.py`): if the same pitch starts on two strings within 4 frames (46 ms),
+  keep only the note whose fret posterior, averaged over the note, is higher. `dedup: 0` turns it off and reproduces the
+  previous results exactly (checked: E10 validation chunks .7603 / .7439).
+- **Choices on validation:**
+  - window 2, 4, 6 or 8 frames: all within ±.0003 → 4;
+  - which note to keep: fret posterior (GuitarSet string/fret .8127) beats attack confidence (.8101), max(onset, active) (.8105)
+    and lowest fret (.8043); duration ties (.8129) → fret posterior, which also gave the best GAPS string agreement;
+  - re-tuned thresholds: unchanged (onset 0.6, frame 0.6, legato 8, orphan off).
+- **Rejected:** requiring an energy rise at the pitch for a re-attack of a still-ringing pitch. It gave +.004 GAPS pitch but cost
+  .004–.015 on GuitarSet at every threshold. Real re-plucks and false ones have the same onset confidence (median .96 vs .95),
+  so this needs the model (release head, E11), not a rule.
+- **Validation:** GuitarSet chunks pitch .7603 → .7672, string/fret .7439 → .7465; GuitarSet full tracks (training eval)
+  string/fret .8087 → .8127, pitch .8261 → .8346; GAPS validation pitch .8454 → .8824.
+- **Test (once):**
+
+  | Test set | Metric | E8 before → after | E10 before → after |
+  |---|---|---|---|
+  | GuitarSet player 05 chunks | time pitch F1 | .836 → .846 | .851 → **.859** |
+  | | time string/fret F1 | .811 → .812 | .826 → **.828** |
+  | | tick pitch / string-fret F1 | .845 / .818 → .854 / .820 | .861 / .836 → **.870 / .839** |
+  | GAPS test | pitch F1 | .594 → .622 | .787 → **.811** |
+  | | string agreement | .690 → .644 | .864 → .840 |
+
+- **About the GAPS string agreement drop:** this is not a regression. Agreement is measured on pitch-correct notes, and a duplicate pair
+  is two guesses of the string: in 898 of the 924 validation pairs one of the two was on the score's string. After dedup the kept
+  note is on the score string in 62% of those cases, while pitch hits are unchanged (8696 → 8695). So .840 is the honest figure,
+  and the earlier .864 was inflated by duplicates.
+- **Demo recording:** one duplicate removed (472 → 471 notes), `out/my_video/my_video_H_dedup.gp5`.
+- **Note:** training validation (`evaluate_guitarset` / `evaluate_gaps`) uses `DEFAULT_PARAMS`, so from E11 on the logged
+  validation numbers include dedup; compare with the "after" figures above, not with E10's training log.

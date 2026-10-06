@@ -8,9 +8,9 @@ The model reads a harmonic constant-Q spectrogram and predicts, at every frame (
 
 | Test set | Metric | Best model (`runs/tabmodel_mid_gaps/best.pt`) |
 |---|---|---|
-| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.826** |
-| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.851** |
-| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 (onset ±50 ms) | **0.787** |
+| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.828** |
+| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.859** |
+| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 (onset ±50 ms) | **0.811** |
 
 The full history (including the original Whisper / Audio2Tab approach and a Basic Pitch baseline, both replaced),
 every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a new entry there for every experiment,
