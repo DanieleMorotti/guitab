@@ -400,7 +400,7 @@ Post-processing only, no retraining; tested on the E10 predictions, chosen on va
 - **Note:** training validation (`evaluate_guitarset` / `evaluate_gaps`) uses `DEFAULT_PARAMS`, so from E11 on the logged
   validation numbers include dedup; compare with the "after" figures above, not with E10's training log.
 
-### E11 — Precise attack targets + release head (`runs/tabmodel_mid_gaps_reg`) — RUNNING
+### E11 — Precise attack targets + release head (`runs/tabmodel_mid_gaps_reg`) — DONE (stopped at 13k), not adopted yet
 **Goal:** attack the error classes from A1 that a rule could not fix (D1): spurious and merged re-attacks of a ringing pitch,
 attacks 50–150 ms off, short notes. The backbone, data, sampling, augmentation, steps and seed are the same as E10.
 The change is only in what the heads learn and how notes are built:
@@ -437,3 +437,39 @@ The change is only in what the heads learn and how notes are built:
     scores up to step 4000 in the log use the buggy decoding.
   - **Side effect of the resume:** data sampling is reseeded at the resume step (`rng.seed(step)`), so the batches after 4000
     differ from an uninterrupted run.
+
+**Validation by step** (in-training protocol, onset 0.4 + subframe + dedup; steps 1k–4k used the buggy release decoding):
+
+| Step | 1k | 2k | 3k | 4k | 5k | 6k | 7k | 8k | 9k | 10k | 11k | 12k | 13k |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| GuitarSet string/fret | .390 | .634 | .690 | .710 | .785 | .797 | .792 | .804 | .811 | .810 | .816 | **.818** | .818 |
+| GAPS pitch | .379 | .688 | .673 | .793 | .817 | .838 | .866 | .849 | .864 | .874 | .862 | **.871** | .869 |
+| GAPS string agreement | .691 | .739 | .802 | .830 | .832 | .819 | .831 | .841 | .850 | .855 | .861 | .853 | .862 |
+
+- **Stopped after the step-13000 eval** (laptop shutdown). By then the learning rate was 4e-5 on its cosine decay and the selection score
+  had flattened (.8444 at 12k, .8436 at 13k). `best.pt` = step 12000. `last.pt` is kept, so the run can be resumed to 16k
+  with `scripts/train_mid_gaps_reg.sh`.
+- **Tuning on validation** (`evaluate.py --tune`, release grid): onset 0.4, frame 0.5, legato 8, orphan off, dedup 4, offset 0.7, subframe on.
+  - The release threshold makes no difference to attack-based F1: 0.7 and "off" (1.01) give the same scores.
+  - Sub-frame attack times were selected.
+
+**E11 vs E10 + D1** (each with its own tuned settings):
+
+| Set | Metric | E10 + D1 | E11 |
+|---|---|---|---|
+| GuitarSet validation chunks | time pitch / string-fret F1 | .7672 / .7465 | .7710 / .7484 |
+| GAPS validation | pitch F1 / string agreement | .8824 / .8639 | .8698 / .8539 |
+| **GuitarSet test chunks** | time pitch / string-fret F1 | .8593 / .8283 | **.8622 / .8306** |
+| | tick pitch / string-fret F1 | .8696 / .8385 | **.8719 / .8400** |
+| **GAPS test** | pitch F1 / string agreement | .8108 / .8403 | .8106 / **.8447** |
+
+**Conclusion:**
+- On attack-based note F1, E11 is roughly level with E10: +.002–.003 on GuitarSet test, equal on GAPS test pitch,
+  −.013 on GAPS validation pitch. That is within run-to-run noise, so the new targets did not fix the missed and
+  re-attacked notes found in A1.
+- E11 also had 3k fewer training steps; E10's best was at step 15000.
+- The release head's real effect is on note lengths (rests, let-ring), which none of our metrics measure. Next step:
+  add an attack + release F1 (mir_eval style: release within max(50 ms, 20% of the note length)) and compare E10 and E11
+  on it, together with a listening check on the demo, before choosing the default model.
+- `DEFAULT_CHECKPOINT` stays E10 (`runs/tabmodel_mid_gaps/best.pt`). E11's tuned settings are the ones listed above; pass them
+  with `--params` (or via `transcribe.py --onset 0.4`, plus the release settings, once that is wired).
