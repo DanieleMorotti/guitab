@@ -4,7 +4,7 @@ Per split (default gaps_test): pitch F1 (onset +-50 ms) against all fine-aligned
 string agreement = share of pitch-correct notes (with a score string label) on the score's string.
 Score fingerings are an editor's suggestion, so agreement is a noisy proxy for tab accuracy.
 
-    python tools/eval_gaps.py --checkpoints runs/tabmodel_mid/best.pt runs/tabmodel_mid_gaps/best.pt
+    python scripts/evaluate_gaps.py --checkpoints runs/tabmodel_mid/best.pt runs/tabmodel_mid_gaps/best.pt
 """
 
 import argparse
@@ -13,10 +13,11 @@ from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tabdata import load_split  # noqa: E402
-from tabmodel_infer import load_model  # noqa: E402
-from train_tabmodel import evaluate_gaps, gaps_ref  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from guitab.data import load_split  # noqa: E402
+from guitab.evaluation import evaluate_gaps, gaps_ref  # noqa: E402
+from guitab.inference import load_model  # noqa: E402
 
 
 def main():

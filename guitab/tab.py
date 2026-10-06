@@ -7,22 +7,32 @@ Back end of the transcriber:
   3. onsets/offsets are snapped to a 16th (or 32nd) grid;
   4. notes without a string get one (distinct strings per chord), then the Viterbi
      fingering optimiser picks playable positions;
-  5. tokens are written with guitarset_to_tokens.build_tokens and decoded to .gp5.
+  5. tokens are written in the DadaGP format (build_tokens) and converted to .gp5 (decode_to_gp5).
+
+Tab tokens: 960 ticks per quarter; notes still sounding at a barline are re-emitted with nfx:tie, and
+silent gaps of at least a quarter become rests.
 """
+
+import tempfile
 
 import numpy as np
 
-from fingering import OPEN_PITCH, refinger_tokens
-from guitarset_to_tokens import TICKS_PER_BEAT, build_tokens
+from .fingering import refinger_tokens
+from .guitar import OPEN_PITCH
+from .paths import BEAT_THIS_CKPT
+
+TICKS_PER_BEAT = 960  # DadaGP convention
+GRID = 120  # 32nd note: finest grid the token writer supports
+MIN_REST_TICKS = 960
+# Note values DadaGP can encode on this grid (subset of dadagp.supported_times).
+SUPPORTED_WAITS = [3840, 2880, 1920, 1440, 960, 720, 480, 360, 240, 120]
 
 
 def detect_beats(audio_path, device="cpu"):
-    """(beats, downbeats) in seconds from Beat This!."""
-    from pathlib import Path
-
+    """(beats, downbeats) in seconds from Beat This! (local checkpoint if present, else downloaded)."""
     from beat_this.inference import File2Beats
 
-    ckpt = Path(__file__).resolve().parents[1] / "data" / "models" / "beat_this-final0.ckpt"
+    ckpt = BEAT_THIS_CKPT
     file2beats = File2Beats(checkpoint_path=str(ckpt) if ckpt.exists() else "final0", device=device, dbn=False)
     beats, downbeats = file2beats(str(audio_path))
     return np.asarray(beats, dtype=float), np.asarray(downbeats, dtype=float)
@@ -120,3 +130,77 @@ def notes_to_tokens(notes, grid_obj, name="song", grid=240, fingering=None, max_
     if fingering is not None:
         tokens = refinger_tokens(tokens, fingering)
     return tokens
+
+
+def build_tokens(name, notes, tempo, num_beats):
+    measure_ticks = num_beats * TICKS_PER_BEAT
+    by_onset = {}
+    for onset, offset, string_value, fret in notes:
+        group = by_onset.setdefault(onset, {})
+        if string_value not in group or offset > group[string_value][1]:
+            group[string_value] = (fret, offset)
+    onsets = sorted(by_onset)
+
+    tokens = [name, "downtune:0", f"tempo:{tempo}", "start", "new_measure"]
+    sounding = {}  # string -> (fret, offset)
+    cursor = 0
+
+    def advance(target):
+        """Emit waits from cursor to target as encodable note values, splitting at barlines.
+
+        Notes still sounding across a split are re-emitted with nfx:tie, as Guitar Pro does.
+        """
+        nonlocal cursor
+        while cursor < target:
+            next_bar = (cursor // measure_ticks + 1) * measure_ticks
+            remaining = min(target, next_bar) - cursor
+            step = next(w for w in SUPPORTED_WAITS if w <= remaining)
+            tokens.append(f"wait:{step}")
+            cursor += step
+            for s in [s for s, (_, off) in sounding.items() if off <= cursor]:
+                del sounding[s]
+            if cursor == next_bar:
+                tokens.append("new_measure")
+            if cursor < target:
+                if sounding:
+                    for s in sorted(sounding):
+                        tokens.append(f"note:s{s}:f{sounding[s][0]}")
+                        tokens.append("nfx:tie")
+                else:
+                    tokens.append("rest")
+
+    if onsets and onsets[0] > 0:
+        tokens.append("rest")
+        advance(onsets[0])
+
+    for index, onset in enumerate(onsets):
+        if onset > cursor:
+            advance(onset)
+        group = by_onset[onset]
+        for s in sorted(group):
+            fret, offset = group[s]
+            tokens.append(f"note:s{s}:f{fret}")
+            sounding[s] = (fret, offset)
+        next_onset = onsets[index + 1] if index + 1 < len(onsets) else None
+        if next_onset is None:
+            last_off = max(off for _, off in sounding.values()) if sounding else onset + GRID
+            advance(max(last_off, onset + GRID))
+            break
+        last_off = max(off for _, off in sounding.values())
+        if next_onset - last_off >= MIN_REST_TICKS:
+            advance(max(last_off, onset + GRID))
+            tokens.append("rest")
+    if tokens[-1] == "new_measure":
+        tokens.pop()
+    tokens.append("end")
+    return tokens
+
+
+def decode_to_gp5(tokens, gp5_path):
+    from .dadagp_utils import DadaGP
+
+    restored = [f"clean0:{t}" if t.startswith("note:") or t == "rest" else t for t in tokens]
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
+        handle.write("\n".join(restored) + "\n")
+        name = handle.name
+    DadaGP.decode(name, str(gp5_path))

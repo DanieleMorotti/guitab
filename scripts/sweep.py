@@ -1,13 +1,13 @@
 """Precision/recall sweep of note-extraction and fingering settings, plus standard GuitarSet metrics.
 
-1. Sweep (chunk protocol, same as eval_tabmodel.py): onset threshold, onset-less notes ("orphan"),
+1. Sweep (chunk protocol, same as scripts/evaluate.py): onset threshold, onset-less notes ("orphan"),
    fingering preset -> precision / recall / F1 for pitch and string+fret, on validation AND test.
    Choose settings on validation; test is only reported.
 2. Benchmark metrics on full test tracks (comparable in definition to TabCNN-style papers):
    frame-level multi-pitch P/R/F and tablature P/R/F (per frame, per string+fret), and note-level
    onset-only (50 ms) F1 by pitch and by string+fret against the JAMS annotations.
 
-    python tools/sweep_tabmodel.py --checkpoint runs/tabmodel_mid/best.pt --out runs/sweep_tabmodel_mid.json
+    python scripts/sweep.py --checkpoint runs/tabmodel_mid_gaps/best.pt --out runs/sweep_tabmodel_mid_gaps.json
 """
 
 import argparse
@@ -19,15 +19,15 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval_tabmodel import chunk_text, load_chunks  # noqa: E402
-from fingering import refinger_text  # noqa: E402
-from note_metrics import compute_note_detection_metrics  # noqa: E402
-from tabdata import CACHE, OPEN_PITCH, STRINGS  # noqa: E402
-from tabmodel_infer import DEFAULT_PARAMS, extract_notes, load_model, match_f1, predict, ref_notes  # noqa: E402
-from transcribe import FINGERING_PRESETS  # noqa: E402
+from guitab.evaluation import chunk_text, load_chunks, match_f1, ref_notes  # noqa: E402
+from guitab.fingering import FINGERING_PRESETS, refinger_text  # noqa: E402
+from guitab.guitar import OPEN_PITCH, STRINGS  # noqa: E402
+from guitab.guitarset import jams_path  # noqa: E402
+from guitab.inference import DEFAULT_PARAMS, extract_notes, load_model, predict  # noqa: E402
+from guitab.metrics import compute_note_detection_metrics  # noqa: E402
+from guitab.paths import CACHE  # noqa: E402
 
 
 def prf(tp, fp, fn):
@@ -100,7 +100,7 @@ def main():
         name, lab = labels[path]
         n = min(len(lab), len(tab))
         counts += frame_metrics(tab[:n], lab[:n])
-        ref = ref_notes(ROOT / "data" / "guitarset" / "annotation" / f"{name}.jams")
+        ref = ref_notes(jams_path(name))
         est = extract_notes(tab, onset)
         note_sf.append(match_f1(ref, est, key=("string", "fret")))
         note_p.append(match_f1(ref, est, key=("pitch",)))

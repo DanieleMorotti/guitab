@@ -5,40 +5,27 @@ The CQT frame/onset tab model (default checkpoint runs/tabmodel_mid_gaps/best.pt
 (or a fixed --tempo), optionally re-fingered, and written as DadaGP tokens and .gp5.
 
 Usage:
-    python tools/transcribe.py --audio my_song.wav --out_dir out/my_song [--onset 0.4] [--fingering low]
+    python scripts/transcribe.py --audio my_song.wav --out_dir out/my_song [--onset 0.4] [--fingering low]
 """
 
 import argparse
 import sys
-import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch  # noqa: E402
 
-DEFAULT_CHECKPOINT = ROOT / "runs" / "tabmodel_mid_gaps" / "best.pt"
-FINGERING_PRESETS = {
-    "auto": {"position": 0.05, "move": 0.35, "model": 2.0},           # cautious: keeps model choices unless clearly awkward
-    "low": {"position": 0.6, "move": 0.35, "model": 0.3, "high": 2.0},  # strongly prefer open/first positions
-}
+from guitab.fingering import FINGERING_PRESETS  # noqa: E402
+from guitab.inference import transcribe_file  # noqa: E402
+from guitab.paths import DEFAULT_CHECKPOINT  # noqa: E402
+from guitab.tab import BeatGrid, decode_to_gp5, detect_beats, notes_to_tokens  # noqa: E402
 
 
 def resolve_device(name):
     if name != "auto":
         return name
     return "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
-
-def decode_to_gp5(tokens, gp5_path):
-    from dadagp_utils import DadaGP
-
-    restored = [f"clean0:{t}" if t.startswith("note:") or t == "rest" else t for t in tokens]
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
-        handle.write("\n".join(restored) + "\n")
-        name = handle.name
-    DadaGP.decode(name, str(gp5_path))
 
 
 def main():
@@ -59,12 +46,8 @@ def main():
     parser.add_argument("--name", default=None, help="Output file stem (default: audio file stem).")
     args = parser.parse_args()
 
-    from notes_to_tab import BeatGrid, detect_beats, notes_to_tokens
-
     audio_path = Path(args.audio).resolve()
     device = resolve_device(args.device)
-    from tabmodel_infer import transcribe_file
-
     params = {}
     if args.onset is not None:
         params["onset"] = args.onset

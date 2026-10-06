@@ -13,7 +13,8 @@ Tied notes keep the string of the note they continue.
 import itertools
 import re
 
-OPEN_PITCH = {6: 40, 5: 45, 4: 50, 3: 55, 2: 59, 1: 64}
+from .guitar import OPEN_PITCH
+
 NOTE = re.compile(r"^note:s([1-6]):f(\d+)$")
 
 DEFAULT_WEIGHTS = {
@@ -24,6 +25,12 @@ DEFAULT_WEIGHTS = {
     "model": 0.8,       # bonus per note matching the model's own string choice
     "max_fret": 20,
     "max_span": 4,
+}
+
+# Presets used by scripts/transcribe.py --fingering (and the evaluation scripts)
+FINGERING_PRESETS = {
+    "auto": {"position": 0.05, "move": 0.35, "model": 2.0},           # cautious: keeps model choices unless clearly awkward
+    "low": {"position": 0.6, "move": 0.35, "model": 0.3, "high": 2.0},  # strongly prefer open/first positions
 }
 
 

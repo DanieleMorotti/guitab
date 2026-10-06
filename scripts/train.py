@@ -3,7 +3,7 @@
 Validation (player 04) every --eval_every steps: note-level F1 (onset +-50 ms) by string/fret and by
 pitch against the JAMS annotations; the best string/fret F1 checkpoint is kept as best.pt.
 
-With --gaps_share > 0, GAPS classical/fingerstyle pieces (tools/gaps_labels.py) are mixed in: each
+With --gaps_share > 0, GAPS classical/fingerstyle pieces (scripts/gaps_labels.py) are mixed in: each
 crop comes from GAPS with that probability. GAPS notes with unknown strings are masked, and its
 string labels (score fingerings, not necessarily what was played) get --gaps_tab_weight in the tab
 loss. Validation then also reports GAPS (gaps_validation) pitch F1 and string agreement, and the best
@@ -12,9 +12,8 @@ checkpoint maximises the mean of GuitarSet string/fret F1 and GAPS pitch F1.
 Augmentation on the CQT: pitch roll up 0-2 semitones (frets shifted, fret > 19 ignored), level /
 noise floor / spectral tilt changes, short time masks.
 
-Example (memory-capped for a laptop that is also used for other work):
-    PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.35 PYTORCH_MPS_LOW_WATERMARK_RATIO=0.25 \\
-    python tools/train_tabmodel.py --out runs/tabmodel_mid --size mid --batch 16 --steps 20000
+Launch through scripts/train_mid*.sh (memory cap, low priority, resume), e.g.
+    nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &
 """
 
 import argparse
@@ -30,10 +29,13 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tabdata import N_CLASSES, N_FRETS, ROOT, load_split  # noqa: E402
-from tabmodel import TabModel, count_params, pitch_targets  # noqa: E402
-from tabmodel_infer import extract_notes, match_f1, predict  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from guitab.data import load_split  # noqa: E402
+from guitab.evaluation import evaluate_gaps, evaluate_guitarset, gaps_ref, ref_notes  # noqa: E402
+from guitab.guitar import N_CLASSES, N_FRETS  # noqa: E402
+from guitab.guitarset import jams_path  # noqa: E402
+from guitab.model import TabModel, count_params, pitch_targets  # noqa: E402
 
 
 def sample_batch(pools, batch, length, augment, rng, tab_weights):
@@ -101,48 +103,6 @@ def loss_fn(out, tab, onset, unk, tab_w):
     return tab_loss + on_loss + 0.5 * pitch_loss, {"tab": tab_loss.item(), "onset": on_loss.item(), "pitch": pitch_loss.item()}
 
 
-def evaluate(model, val, device, ref_cache):
-    model.eval()
-    sf, pf = [], []
-    for tr in val:
-        tab, onset = predict(model, tr["feat"], device)
-        est = extract_notes(tab, onset)
-        ref = ref_cache[tr["name"]]
-        sf.append(match_f1(ref, est, key=("string", "fret")))
-        pf.append(match_f1(ref, est, key=("pitch",)))
-    model.train()
-    return float(np.mean(sf)), float(np.mean(pf))
-
-
-def evaluate_gaps(model, val, device, ref_cache):
-    """Pitch F1 against all GAPS MIDI notes, and string agreement on pitch-correct notes with known strings."""
-    model.eval()
-    pf, agree, total = [], 0, 0
-    for tr in val:
-        tab, onset = predict(model, tr["feat"], device)
-        est = extract_notes(tab, onset)
-        ref = ref_cache[tr["name"]]
-        pf.append(match_f1(ref, est, key=("pitch",)))
-        known = [r for r in ref if r["string"]]
-        sf_hits = match_f1(known, est, key=("string", "fret"))
-        p_hits = match_f1(known, est, key=("pitch",))
-        if p_hits > 0:
-            agree += sf_hits / p_hits * len(known)
-            total += len(known)
-    model.train()
-    return float(np.mean(pf)), agree / max(total, 1)
-
-
-def gaps_ref(label_path):
-    from tabdata import OPEN_PITCH
-
-    out = []
-    for on, off, s, f in json.loads(Path(label_path).read_text())["notes"]:
-        pitch = OPEN_PITCH[s] + f if s else f
-        out.append({"onset": on, "offset": off, "string": s, "fret": f if s else None, "pitch": pitch})
-    return out
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
@@ -170,9 +130,7 @@ def main():
 
     train = load_split("train")
     val = load_split("validation", include_shift=False)
-    from tabmodel_infer import ref_notes
-
-    ref_cache = {tr["name"]: ref_notes(ROOT / "data" / "guitarset" / "annotation" / f"{tr['name']}.jams") for tr in val}
+    ref_cache = {tr["name"]: ref_notes(jams_path(tr["name"])) for tr in val}
     weights = [len(t["feat"]) for t in train]
     pools = [(1.0 - args.gaps_share, train, weights)]
     print(f"GuitarSet train tracks {len(train)} ({sum(weights) / 86.13 / 3600:.1f} h), val tracks {len(val)}", flush=True)
@@ -240,7 +198,7 @@ def main():
         if args.max_steps_now and step - start_step >= args.max_steps_now:
             break
         if step % args.eval_every == 0 or step == args.steps:
-            sf, pf = evaluate(model, val, device, ref_cache)
+            sf, pf = evaluate_guitarset(model, val, device, ref_cache)
             rec = {"step": step, "val_sf": sf, "val_pitch": pf}
             sel = sf
             if gaps_val:

@@ -9,18 +9,14 @@ Notes are extracted per string:
     fret changes for `legato` consecutive frames (hammer-on / pull-off / slide -> new note).
 """
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from .audio import FPS, compute_cqt, load_audio
+from .guitar import OPEN_PITCH, STRINGS
+from .model import TabModel
 
-from tabdata import FPS, OPEN_PITCH, STRINGS, compute_cqt, load_audio  # noqa: E402
-from tabmodel import TabModel  # noqa: E402
-
-# tuned on GuitarSet validation (player 04) with tools/eval_tabmodel.py --tune
+# tuned on GuitarSet validation (player 04) with scripts/evaluate.py --tune
 DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3}
 
 
@@ -103,30 +99,3 @@ def transcribe_file(checkpoint, audio_path, device, params=None):
     feat = compute_cqt(load_audio(audio_path))
     tab, onset = predict(model, feat, device)
     return extract_notes(tab, onset, params)
-
-
-def match_f1(ref, est, tol=0.05, key=("string", "fret")):
-    """Greedy note F1 by onset (+-tol s) and identity (`key` fields)."""
-    used = set()
-    tp = 0
-    by_id = {}
-    for i, n in enumerate(est):
-        by_id.setdefault(tuple(n[k] for k in key), []).append(i)
-    for r in ref:
-        cands = [i for i in by_id.get(tuple(r[k] for k in key), []) if i not in used and abs(est[i]["onset"] - r["onset"]) <= tol]
-        if cands:
-            used.add(min(cands, key=lambda i: abs(est[i]["onset"] - r["onset"])))
-            tp += 1
-    prec = tp / max(len(est), 1)
-    rec = tp / max(len(ref), 1)
-    return 2 * prec * rec / max(prec + rec, 1e-9)
-
-
-def ref_notes(jams_path, shift=0):
-    from tabdata import string_notes
-
-    out = []
-    for on, off, col, fret in string_notes(jams_path, shift):
-        s = STRINGS[col]
-        out.append({"onset": on, "offset": off, "string": s, "fret": fret, "pitch": OPEN_PITCH[s] + fret})
-    return out

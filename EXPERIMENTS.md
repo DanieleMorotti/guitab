@@ -1,5 +1,8 @@
 # Guitar audio → tab: experiment log
 
+> Entries before 2026-10-06 name scripts by their old `tools/` paths; see the table in the last entry for the
+> current `guitab/` and `scripts/` names.
+
 Each entry gives what was run, the exact command or script, and the result, so it can be repeated.
 Add new entries at the bottom. All paths are relative to `guitab/`.
 
@@ -279,3 +282,44 @@ Audio2Tab has no licence file. The copied code keeps attribution headers; check 
   `requirements.in` and the old Audio2Tab freeze were dropped.
 - The project is now a git repository. Data, weights, outputs and environments are excluded (`.gitignore`);
   only code, docs and the frozen `data/eval_chunks.json` are tracked.
+
+### Refactor into a package — 2026-10-06
+The flat `tools/` folder was split into a library package, `guitab/`, and command-line entry points, `scripts/`.
+Results are unchanged; verification is below.
+
+| Old | New |
+|---|---|
+| `tools/tabmodel.py` | `guitab/model.py` |
+| `tools/tabdata.py` | `guitab/data.py`, `guitab/audio.py` (CQT), `guitab/guitarset.py` (JAMS notes); `main()` → `scripts/build_cache.py` |
+| `tools/tabmodel_infer.py` | `guitab/inference.py`; `match_f1` / `ref_notes` → `guitab/evaluation.py` |
+| `tools/notes_to_tab.py` (+ `build_tokens` from `guitarset_to_tokens.py`, `decode_to_gp5` from `transcribe.py`) | `guitab/tab.py` |
+| `tools/note_metrics.py`, `tools/fingering.py`, `tools/dadagp_utils/` | `guitab/metrics.py`, `guitab/fingering.py` (+ `FINGERING_PRESETS`), `guitab/dadagp_utils/` |
+| `tools/gaps_common.py` + label logic of `tools/gaps_labels.py` | `guitab/gaps.py`; CLIs `scripts/gaps_extract.py`, `scripts/gaps_labels.py`, `scripts/gaps_download.py` |
+| `tools/train_tabmodel.py`, `eval_tabmodel.py`, `eval_gaps.py`, `sweep_tabmodel.py`, `transcribe.py` | `scripts/train.py`, `evaluate.py`, `evaluate_gaps.py`, `sweep.py`, `transcribe.py` (evaluation helpers → `guitab/evaluation.py`) |
+| `tools/guitarset_to_tokens.py`, `tools/guitarset_shift.py` | `scripts/prepare_guitarset.py` (writes only the track list; the reference token files were used only to build the frozen eval chunks), `scripts/guitarset_shift.py` |
+| `runs/train_tabmodel_mid*.sh` | `scripts/train_mid.sh`, `scripts/train_mid_gaps.sh` |
+
+**Other changes:**
+- **Shared constants:** `OPEN_PITCH`, `STRINGS` and the fret classes now live in `guitab/guitar.py`, instead of being defined in four places.
+  All paths are in `guitab/paths.py`.
+- **Relative paths:** `data/guitarset.csv`, `data/guitarset_shift.csv` and `data/eval_chunks.json` now store repo-relative audio paths
+  instead of absolute `/Users/...` ones. The track lists dropped their unused columns.
+- **Bug fix:** `scripts/gaps_labels.py --only` used to overwrite `labels_summary.csv` with only the requested pieces,
+  which would silently shrink the GAPS selection. It now updates just those rows.
+
+**Verification** (old code snapshot vs new code, same data and weights):
+- Every evaluation output is identical:
+  - `evaluate.py` on validation and test for both models, all four metrics, with and without fingering;
+  - `evaluate_gaps.py` on GAPS test and validation.
+- Transcriptions of the demo recording with 5 option sets are byte-identical (`.gp5` and tokens):
+  default; `--fingering low`; `--fingering auto --orphan`; `--onset 0.4 --tempo 90 --grid 120`; the E8 checkpoint.
+- Function-level checks all pass:
+  - `tracks()` (996 tracks) is identical, and so are the `load_split` arrays for 3 splits;
+  - CQT features and frame labels recomputed by the new code equal the cached files written by the old code
+    (4 GuitarSet/shifted tracks, 3 GAPS pieces);
+  - 5 seeded training batches with augmentation, plus the model outputs and loss values, are identical;
+  - GAPS labels for 6 pieces and their summary rows are identical;
+  - case-safe extraction (1103 files) and the download list are identical.
+- The regenerated track lists match the old ones (same tracks, order, audio files and splits).
+- Training, evaluation, checkpoint saving and resume work through the new CLI.
+- The full `sweep.py` output on E8 is identical to `runs/sweep_tabmodel_mid.json`.

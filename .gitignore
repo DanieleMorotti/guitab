@@ -1,8 +1,7 @@
 # Data, model weights, outputs and environments are not versioned: the code here rebuilds them.
 data/*
 !data/eval_chunks.json
-runs/*
-!runs/*.sh
+runs/
 out/
 .venv/
 .venv_bp/

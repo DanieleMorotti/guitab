@@ -18,6 +18,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .guitar import OPEN_PITCH, STRINGS
+
 BASE_BIN = 36  # E2 in a CQT starting at E1 with 36 bins/oct
 N_PITCH_BINS = 144
 HARMONICS = [0.5, 1, 2, 3, 4, 5]
@@ -76,8 +78,6 @@ class TabModel(nn.Module):
 
 def pitch_targets(tab):
     """Multi-pitch frame target [B, T, 48] (MIDI 40..87) from tab labels [B, T, 6]."""
-    from tabdata import OPEN_PITCH, STRINGS
-
     opens = torch.tensor([OPEN_PITCH[s] for s in STRINGS], device=tab.device)
     active = tab > 0
     pitch = (opens + tab.long() - 1 - 40).clamp(0, 47)

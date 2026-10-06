@@ -1,38 +1,71 @@
-"""Build per-string note labels for GAPS (classical / fingerstyle guitar) recordings.
+"""GAPS (classical / fingerstyle guitar, Zenodo 13962272): case-safe files and per-string labels.
 
-GAPS gives, per piece:
+Case-safe names: GAPS ids (scorehash, e.g. "GM1wc" vs "gM1wc") are case-sensitive; unzipping the
+dataset on macOS silently overwrote 278 files whose names differ only by case. Everything GAPS-related
+is stored under safe(h) = h + "_" + md5(h)[:6], extracted straight from the zip by extract().
+
+Labels: per piece GAPS gives
   midi/<h>-fine-aligned.mid    note onsets/offsets aligned to the YouTube audio (timing truth)
   musicxml/<h>.xml             the score, usually with a tab staff carrying <string>/<fret>
-  syncpoints/<h>-syncpoints.json  [measure, time] or [measure, time, tick] anchors (480 ticks/quarter);
-                               measure = index in the score with repeats unfolded
 The fine-aligned MIDI is the score aligned to the audio, so its notes come in score order: chord
 sequences (score onset groups vs MIDI onset groups) are aligned by order with an LCS-style DP on
 pitch overlap, and string/fret is copied by pitch inside matched chords. (Interpolating the
 syncpoints proved unreliable for many pieces.) Notes without a match keep string 0 (unknown);
-training masks the tab/onset loss for those.
-Pieces are flagged when the score's strings imply a non-standard tuning (e.g. drop D) or when the
-match rate is low; those are excluded from training by tabdata.py.
-
-    python tools/gaps_labels.py --workers 4
-Output: data/gaps/labels/<safe(h)>.json and data/gaps/labels_summary.csv (files use the case-safe
-names of tools/gaps_common.py; run `python tools/gaps_common.py` first to extract the zip).
+training masks the tab/onset loss for those. Pieces are flagged when the score's strings imply a
+non-standard tuning (e.g. drop D) or when the match rate is low (see data.gaps_selection).
 """
 
-import argparse
-import csv
+import hashlib
 import json
+import re
+import zipfile
 from collections import Counter
-from multiprocessing import Pool
-from pathlib import Path
 
 import numpy as np
 
-from gaps_common import label_path, midi_path, xml_path
+from .guitar import OPEN_PITCH
+from .paths import GAPS
 
-ROOT = Path(__file__).resolve().parents[1]
-GAPS = ROOT / "data" / "gaps"
-OPEN_PITCH = {6: 40, 5: 45, 4: 50, 3: 55, 2: 59, 1: 64}
+SAFE = GAPS / "safe"  # midi/, musicxml/, syncpoints/ with safe names; csv files copied as-is
+GAPS_SPLITS = GAPS / "gaps_v1" / "gaps_v1_splits.csv"
+GAPS_METADATA = GAPS / "gaps_v1" / "gaps_v1_metadata.csv"
 TICKS = 480
+
+
+def safe(h):
+    return f"{h}_{hashlib.md5(h.encode()).hexdigest()[:6]}"
+
+
+def midi_path(h):
+    return SAFE / "midi" / f"{safe(h)}-fine-aligned.mid"
+
+
+def xml_path(h):
+    return SAFE / "musicxml" / f"{safe(h)}.xml"
+
+
+def audio_path(h):
+    return GAPS / "audio" / f"{safe(h)}.wav"
+
+
+def label_path(h):
+    return GAPS / "labels" / f"{safe(h)}.json"
+
+
+def extract(out_dir=SAFE):
+    z = zipfile.ZipFile(GAPS / "gaps_v1_no_audio.zip")
+    n = 0
+    for name in z.namelist():
+        base = name.split("/")[-1]
+        if not base:
+            continue
+        sub = name.split("/")[-2]
+        m = re.match(r"^(.{5})(-fine-aligned\.mid|-syncpoints\.json|\.xml)$", base)
+        out = out_dir / sub / (f"{safe(m.group(1))}{m.group(2)}" if m else base)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(z.read(name))
+        n += 1
+    return n
 
 
 def score_notes(xml_path):
@@ -101,16 +134,18 @@ def align_groups(a, b):
     return pairs[::-1]
 
 
-def build(h):
+def build_labels(h):
+    """(summary row, label payload or None) for GAPS piece h; payload["notes"] = [onset, offset, string, fret],
+    string 0 = unknown (fret then holds the MIDI pitch)."""
     import pretty_midi
 
     xml, mid = xml_path(h), midi_path(h)
     if not (xml.exists() and mid.exists()):
-        return {"hash": h, "status": "missing files"}
+        return {"hash": h, "status": "missing files"}, None
     try:
         snotes, _ = score_notes(xml)
     except Exception as exc:  # malformed score
-        return {"hash": h, "status": f"parse error {exc!r}"[:120]}
+        return {"hash": h, "status": f"parse error {exc!r}"[:120]}, None
     pm = pretty_midi.PrettyMIDI(str(mid))
     mnotes = sorted((n for i in pm.instruments for n in i.notes), key=lambda n: n.start)
 
@@ -149,31 +184,6 @@ def build(h):
         s, f = fingering.get(id(n), (0, int(n.pitch)))  # unknown string: keep the pitch in the fret slot
         out.append([round(n.start, 4), round(n.end, 4), s, f])
     rate = len(fingering) / max(len(out), 1)
-    label_path(h).parent.mkdir(exist_ok=True)
-    label_path(h).write_text(json.dumps(
-        {"notes": out, "standard_tuning": standard, "match_rate": rate, "content_sim": content_sim}))
+    payload = {"notes": out, "standard_tuning": standard, "match_rate": rate, "content_sim": content_sim}
     return {"hash": h, "status": "ok", "notes": len(out), "match_rate": round(rate, 3), "content_sim": round(content_sim, 3),
-            "standard_tuning": standard, "tuning": json.dumps(tuning)}
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--only", nargs="*", default=None)
-    args = parser.parse_args()
-    hashes = args.only or sorted({r["filename"][:-4] for r in csv.DictReader(open(GAPS / "gaps_v1" / "gaps_v1_splits.csv"))
-                                  if r["filename"].endswith(".wav")})
-    with Pool(args.workers) as pool:
-        rows = pool.map(build, hashes)
-    keys = ["hash", "status", "notes", "match_rate", "content_sim", "standard_tuning", "tuning"]
-    with open(GAPS / "labels_summary.csv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, keys)
-        w.writeheader()
-        w.writerows(rows)
-    ok = [r for r in rows if r["status"] == "ok"]
-    print(f"{len(ok)}/{len(rows)} built; standard tuning {sum(r['standard_tuning'] for r in ok)}; "
-          f"median match rate {np.median([r['match_rate'] for r in ok]):.3f}")
-
-
-if __name__ == "__main__":
-    main()
+            "standard_tuning": standard, "tuning": json.dumps(tuning)}, payload
