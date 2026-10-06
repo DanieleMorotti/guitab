@@ -424,3 +424,16 @@ The change is only in what the heads learn and how notes are built:
   - thresholds are tuned on validation after training (`evaluate.py --tune`, which also searches `offset` and `subframe`).
 - **Comparison point:** E10 + D1 on the same in-training protocol: GuitarSet validation string/fret .8127, pitch .8346;
   GAPS validation pitch .8824, string agreement .8639. The final comparison uses tuned settings for both models.
+- **Decoding bug, fixed at step 4000:**
+  - **Bug:** a note ended at a release peak while the string still looked active, and the legato rule then started a new note
+    there (fake notes).
+  - **Cost:** on the step-3000 checkpoint (GuitarSet validation, onset 0.4) it cost .04: string/fret .690 with releases
+    vs .733 without them.
+  - **Fix:** a legato continuation now happens only after a fret change, never after a release.
+  - **Result:** releases are now neutral for attack F1 (.7322–.7337 for release thresholds 0.5–0.7 vs .7331 without them).
+    That is expected: they change note lengths, not attacks.
+  - **Old checkpoints:** unaffected (E10 validation chunks still .7672 / .7465).
+  - **The run:** stopped right after the step-4000 checkpoint and resumed from it with the fixed code, so validation
+    scores up to step 4000 in the log use the buggy decoding.
+  - **Side effect of the resume:** data sampling is reseeded at the resume step (`rng.seed(step)`), so the batches after 4000
+    differ from an uninterrupted run.

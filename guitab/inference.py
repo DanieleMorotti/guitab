@@ -89,9 +89,12 @@ def extract_notes(tab, onset, offset=None, params=None):
                 continue
             head = tab[start:start + p["fret_frames"], col, 1:].mean(0)
             fret = int(head.argmax())
-            end, changed = start + 1, 0
+            end, changed, released = start + 1, 0, False
             while end < t_total:
-                if end in peak_set or active[end] <= p["frame"] or end in releases:
+                if end in peak_set or active[end] <= p["frame"]:
+                    break
+                if end in releases:
+                    released = True
                     break
                 changed = changed + 1 if frets[end] != fret else 0
                 if changed >= p["legato"]:
@@ -108,8 +111,8 @@ def extract_notes(tab, onset, offset=None, params=None):
                 notes.append({"onset": t_on / FPS, "offset": end / FPS, "string": string, "fret": fret,
                               "pitch": OPEN_PITCH[string] + fret, "score": score,
                               "fret_conf": float(tab[start:max(end, start + 1), col, fret + 1].mean())})
-            # legato change: the next note starts where the fret changed (no onset needed)
-            if end < t_total and end not in peak_set and active[end] > p["frame"]:
+            # legato change: the next note starts where the fret changed (no onset needed); not after a release
+            if end < t_total and not released and end not in peak_set and active[end] > p["frame"]:
                 peak_set.add(end)
             t = max(end, start + 1)
     notes = sorted(notes, key=lambda n: (n["onset"], n["string"]))
