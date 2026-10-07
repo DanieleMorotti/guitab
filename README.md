@@ -6,11 +6,12 @@ MuseScore or any online gp5 player.
 The model reads a harmonic constant-Q spectrogram and predicts, at every frame (11.6 ms), the fret played on each of the
 6 strings plus note attacks. Notes are then snapped to the beats found by a beat tracker and written out as a tab.
 
-| Test set | Metric | Best model (`runs/tabmodel_mid_gaps/best.pt`) |
+| Test set | Metric | Best model (`runs/tabmodel_mid_gaps_aug/best.pt`, E12) |
 |---|---|---|
-| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.828** |
-| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.859** |
-| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 (onset ±50 ms) | **0.811** |
+| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.827** |
+| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.860** |
+| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 (onset ±50 ms) | **0.815** |
+| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | **0.645 / 0.730** (E10: 0.609 / 0.701) |
 
 The full history (including the original Whisper / Audio2Tab approach and a Basic Pitch baseline, both replaced),
 every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a new entry there for every experiment,
@@ -24,7 +25,7 @@ and commit each change separately.
 # 1) extract mono audio from a video or any audio file
 ffmpeg -i my_video.mov -ac 1 -ar 22050 out/my_video/my_video.wav
 
-# 2) transcribe (default checkpoint = best model)
+# 2) transcribe (default checkpoint = best model, E12)
 .venv/bin/python scripts/transcribe.py --audio out/my_video/my_video.wav --out_dir out/my_video
 ```
 
@@ -37,7 +38,7 @@ The output is `out/my_video/my_video.gp5`, plus `my_video.tokens.txt` (the tab a
 | `--fingering low` | Re-fingers everything towards first position (Viterbi optimiser). The default `model` keeps the model's strings; `auto` re-fingers only when clearly awkward. |
 | `--tempo 90` | Uses a fixed tempo. The default `auto` follows the beats detected by Beat This!. |
 | `--grid 120` | Quantisation grid in ticks (960 = quarter): 240 = 16th notes (default), 120 = 32nd notes. |
-| `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_mid/best.pt` (GuitarSet only). |
+| `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_mid_gaps/best.pt` (E10, no audio augmentation) or `runs/tabmodel_mid/best.pt` (E8, GuitarSet only). |
 | `--name X` | Output file stem. |
 | `--params JSON` | Note-extraction settings (keys of `DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`; `--onset` / `--orphan` apply on top. |
 

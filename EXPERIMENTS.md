@@ -490,7 +490,7 @@ The change is only in what the heads learn and how notes are built:
   - **Checked after the removal:** the code under `guitab/` and `scripts/` (except `transcribe.py`) is byte-identical to the D1 commit;
     E10 validation chunks .7672 / .7465; GAPS validation .8824 / .8639; the demo tab `my_video_H_dedup.gp5` is byte-identical.
 
-### E12 — Audio augmentation for phone / room recordings (`runs/tabmodel_mid_gaps_aug`) — RUNNING
+### E12 — Audio augmentation for phone / room recordings (`runs/tabmodel_mid_gaps_aug`) — DONE, new default model
 **Goal:** make the model robust to recordings like the user's (phone / camera audio in a room). The test sets are cleaner recordings,
 so robustness is measured on held-out degraded copies, built with different effects from the training ones.
 
@@ -533,3 +533,60 @@ So phone / room conditions cost E10 .17–.28 F1.
 
 **Caveat:** there is no control run (E10 fine-tuned for 6k more steps on clean data only), so a small clean change
 can't be pinned on augmentation versus the extra steps. Gains on the degraded sets are attributable to augmentation.
+
+**Validation by step** (full tracks, in-training protocol; E10 in the first column):
+
+| | E10 | 1k | 2k | 3k | 4k | 5k | 6k |
+|---|---|---|---|---|---|---|---|
+| clean GuitarSet string/fret | .813 | .807 | .809 | .806 | .811 | .813 | .812 |
+| clean GAPS pitch | .882 | .883 | .881 | .879 | .881 | .884 | .883 |
+| degraded GuitarSet string/fret | .563 | .607 | .597 | .604 | .629 | .620 | .625 |
+| degraded GuitarSet pitch | .699 | .726 | .704 | .725 | .725 | .724 | .725 |
+| degraded GAPS pitch | .717 | .741 | .714 | .723 | .725 | .732 | .732 |
+
+- **Best checkpoint:** step 6000 → `best.pt` (selection score .7630).
+- **Re-tuning:** thresholds re-tuned on clean validation; the optimum is unchanged (DEFAULT_PARAMS).
+- **Validation chunks:**
+  - clean: .7661 / .7449 (E10 .7672 / .7465);
+  - degraded: .6210 / .5346 (E10 .5932 / .4676).
+- **Note on the run:** an ablation launched during training crashed (a multiprocessing pool started from a stdin script) and slowed
+  steps 3.3k–3.7k. Training itself was unaffected.
+
+**Test (once):**
+
+| Test set | Metric | E10 + D1 | **E12** |
+|---|---|---|---|
+| GuitarSet player 05 chunks, clean | time pitch / string-fret F1 | .8593 / .8283 | .8595 / .8265 |
+| | tick pitch / string-fret F1 | .8696 / .8385 | .8690 / .8358 |
+| GAPS test, clean (real YouTube recordings) | pitch F1 / string agreement | .8108 / .8403 | **.8147 / .8493** |
+| GuitarSet test, degraded | time pitch / string-fret F1 | .7008 / .6092 | **.7295 / .6448** |
+| GAPS test, degraded | pitch F1 / string agreement | .6462 / .7374 | **.6740 / .7573** |
+
+**Which degradation hurts?** Pitch F1 with one held-out effect at a time (`scripts/build_aug_cache.py` recipe split up;
+GAPS validation, and every 3rd GuitarSet validation track):
+
+| Model | Set | clean | room (RT60 .4–.9 s) | band-pass 250 Hz–7 kHz | pink noise 20 dB | AAC 64k |
+|---|---|---|---|---|---|---|
+| E10 | GAPS val | .882 | .832 | .794 | .876 | .880 |
+| E12 | GAPS val | .883 | .839 | .806 | .880 | .882 |
+| E10 | GuitarSet val / 3 | .860 | .805 | .802 | .865 | .860 |
+| E12 | GuitarSet val / 3 | .862 | .811 | .832 | .867 | .862 |
+
+- **What hurts:** cutting the lows and room reverb. Noise at 20 dB and AAC at 64k barely matter.
+- **Why the lows matter:** a 250 Hz high-pass removes the fundamentals of the four lowest open strings (82–196 Hz).
+- **Training coverage:** the high-pass range was 60–300 Hz, median about 134 Hz, so cuts at 250 Hz and above were rare.
+  The algorithmic reverb is shorter than RT60 0.4–0.9 s.
+
+**Conclusion:**
+- **Robustness:** E12 is clearly more robust to phone/room audio, +.03–.04 on degraded test.
+- **Clean scores:** unchanged on GuitarSet (−.002 string/fret, +.000 pitch) and better on the real, varied GAPS recordings (+.004 pitch, +.009 agreement).
+- **Adoption:** this meets the rule fixed beforehand, so E12 is the new default (`DEFAULT_CHECKPOINT`). E10's weights are kept.
+- **No control run:** the GAPS clean gain could partly come from the 6k extra steps.
+
+**Demo recording:** `out/my_video/my_video_J_aug.gp5` (E12, default settings) vs `my_video_H_dedup.gp5` (E10).
+463 vs 471 notes, 6 vs 2 rests, 44 changed note lines.
+
+**Next options:**
+- Stronger low cut (high-pass up to about 400 Hz) and longer convolution reverbs in training. Real phone microphones do roll off
+  the lows. To avoid tuning training to our own held-out recipe, that run would need a new held-out recipe, for example
+  real recorded impulse responses.
