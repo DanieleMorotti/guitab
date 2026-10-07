@@ -489,3 +489,47 @@ The change is only in what the heads learn and how notes are built:
   - **Code at the time of the run:** commits `335a11f` and `37fe2b9`; it can be restored from git if needed.
   - **Checked after the removal:** the code under `guitab/` and `scripts/` (except `transcribe.py`) is byte-identical to the D1 commit;
     E10 validation chunks .7672 / .7465; GAPS validation .8824 / .8639; the demo tab `my_video_H_dedup.gp5` is byte-identical.
+
+### E12 — Audio augmentation for phone / room recordings (`runs/tabmodel_mid_gaps_aug`) — RUNNING
+**Goal:** make the model robust to recordings like the user's (phone / camera audio in a room). The test sets are cleaner recordings,
+so robustness is measured on held-out degraded copies, built with different effects from the training ones.
+
+**Effects** (`guitab/augment.py`). Every effect keeps timing (0 ms shift measured with onset-envelope cross-correlation)
+and length, so the original labels are reused.
+- **Training copies** (`train_chain`, pedalboard 0.9.25): 2 copies per training track (720 GuitarSet incl. shifted copies,
+  123 GAPS), each with its own random chain, seeded by name + copy and listed in `data/tabmodel_cache_aug/chains.tsv`:
+  - algorithmic reverb (p .5, room size .1–.7, wet .05–.35);
+  - high-pass 60–300 Hz + low-pass 3.5–10.5 kHz (p .8);
+  - 1–3 EQ peaks of ±8 dB between 150 Hz and 6 kHz (p .7);
+  - compressor (p .6);
+  - white / pink / brown noise at 15–40 dB SNR (p .5);
+  - MP3 at VBR quality 2–9 (p .5).
+  - Resulting mix over the 1,686 copies: band-limiting 79%, compression 62%, MP3 52%, reverb 49%, noise 48%; 7 copies untouched.
+- **Held-out degradation** (`degrade`), used only for evaluation, on the validation and test splits (153 tracks):
+  - convolution with a synthetic room impulse response (RT60 0.4–0.9 s);
+  - zero-phase Butterworth band-pass 250 Hz–7 kHz;
+  - pink noise at 20 dB SNR;
+  - AAC at 64 kbit/s (ffmpeg).
+  - The reverb smears attacks by about 6 ms, which is well inside the ±50 ms tolerance.
+- **Storage:** features in `data/tabmodel_cache_aug/` (4.7 GB, float16 `.npy`, memory-mapped in training);
+  built with `scripts/build_aug_cache.py --copies 2` and `--degraded` (about 15 min, 4 workers).
+
+**E10 on the degraded validation copies** (baseline; clean in brackets):
+- GuitarSet chunks: time pitch .5932 (.7672), time string/fret .4676 (.7465).
+- GAPS validation: pitch .7173 (.8824), string agreement .7875 (.8639).
+So phone / room conditions cost E10 .17–.28 F1.
+
+**Training** (`scripts/train_mid_gaps_aug.sh`): fine-tune from E10 `best.pt` (`--init`, new optimizer).
+- 6k steps, learning rate 1e-4 (E10 used 3e-4) with 300 warm-up steps and cosine decay, batch 16, `--gaps_share 0.5`.
+- `--aug_copies 2 --aug_share 0.5`: half the crops use an augmented copy. The CQT-domain augmentations still apply on top.
+- `--eval_degraded`: every 1k steps it also scores the degraded validation copies.
+  `best.pt` maximises the mean of the clean and degraded selection scores.
+- With augmentation off, training batches and losses are identical to before (seeded comparison with the previous `train.py`).
+
+**Adoption rule** (fixed before the results):
+- clean validation within about .005 of E10;
+- a clear gain on degraded validation;
+- then test once, clean and degraded, plus the demo tab for a listening check.
+
+**Caveat:** there is no control run (E10 fine-tuned for 6k more steps on clean data only), so a small clean change
+can't be pinned on augmentation versus the extra steps. Gains on the degraded sets are attributable to augmentation.

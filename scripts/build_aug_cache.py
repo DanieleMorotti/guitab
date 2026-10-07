@@ -1,0 +1,67 @@
+"""Compute CQT features of augmented audio (guitab/augment.py) into data/tabmodel_cache_aug/.
+
+    python scripts/build_aug_cache.py --copies 2 --workers 4   # training copies: <name>__aug<k>.npy for train + gaps_train
+    python scripts/build_aug_cache.py --degraded --workers 4   # held-out degraded copies: <name>__deg.npy for the
+                                                                # validation / test splits (GuitarSet and GAPS)
+Labels are the original track's (effects keep timing and length). Existing files are kept. Each copy's
+random effect chain is seeded by (track name, copy), and listed in data/tabmodel_cache_aug/chains.tsv.
+"""
+
+import argparse
+import sys
+from multiprocessing import Pool
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from guitab.audio import compute_cqt, load_audio  # noqa: E402
+from guitab.augment import degrade, seed_for, train_chain  # noqa: E402
+from guitab.data import aug_path, tracks  # noqa: E402
+from guitab.paths import AUG_CACHE  # noqa: E402
+
+TRAIN_SPLITS = ("train", "gaps_train")
+EVAL_SPLITS = ("validation", "test", "gaps_validation", "gaps_test")
+
+
+def build(job):
+    name, audio, variant = job
+    path = aug_path(name, variant)
+    if path.exists():
+        return name, variant, "kept"
+    y = load_audio(audio)
+    if variant == "deg":
+        out, desc = degrade(y, name), "degrade"
+    else:
+        out, desc = train_chain(y, np.random.default_rng(seed_for(name, variant)))
+    feat = compute_cqt(out)
+    np.save(path, feat)
+    return name, variant, desc
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--copies", type=int, default=0, help="augmented training copies per track")
+    parser.add_argument("--degraded", action="store_true", help="degraded copies of the validation / test splits")
+    parser.add_argument("--workers", type=int, default=4)
+    args = parser.parse_args()
+    AUG_CACHE.mkdir(parents=True, exist_ok=True)
+    jobs = []
+    for name, audio, _, shift, split in tracks():
+        if split in TRAIN_SPLITS:
+            jobs += [(name, audio, f"aug{k}") for k in range(args.copies)]
+        if args.degraded and split in EVAL_SPLITS:
+            jobs.append((name, audio, "deg"))
+    print(f"{len(jobs)} jobs", flush=True)
+    with Pool(args.workers) as pool, open(AUG_CACHE / "chains.tsv", "a") as log:
+        for i, (name, variant, desc) in enumerate(pool.imap_unordered(build, jobs), 1):
+            if desc != "kept":
+                log.write(f"{name}\t{variant}\t{desc}\n")
+                log.flush()
+            if i % 50 == 0 or i == len(jobs):
+                print(f"{i}/{len(jobs)} {name} {variant}: {desc}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

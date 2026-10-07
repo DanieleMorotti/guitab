@@ -15,6 +15,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.data import aug_path  # noqa: E402
 from guitab.evaluation import chunk_text, load_chunks, score  # noqa: E402
 from guitab.fingering import refinger_text  # noqa: E402
 from guitab.inference import DEFAULT_PARAMS, extract_notes, load_model, predict  # noqa: E402
@@ -27,6 +28,7 @@ def main():
     parser.add_argument("--split", default="test")
     parser.add_argument("--params", default=None, help="JSON note-extraction params")
     parser.add_argument("--tune", action="store_true")
+    parser.add_argument("--variant", default=None, help='"deg": score the held-out degraded copies (robustness)')
     args = parser.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -35,7 +37,7 @@ def main():
     probs = {}
     for path in sorted({m[0] for m in meta}):
         name = Path(path).stem.removesuffix("_mic")
-        feat = np.load(CACHE / f"{name}.npz")["feat"]
+        feat = np.load(aug_path(name, args.variant)) if args.variant else np.load(CACHE / f"{name}.npz")["feat"]
         probs[path] = predict(model, feat, device)
 
     def run(params):

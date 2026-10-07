@@ -7,6 +7,9 @@ Labels per frame (11.6 ms) and string (column order STRINGS, low E .. high E):
 Tracks: GuitarSet (data/guitarset.csv), its pitch-shifted copies (data/guitarset_shift.csv) and the
 GAPS selection (gaps_selection). Splits: train / validation / test (GuitarSet players 00-03 / 04 / 05),
 gaps_train / gaps_validation / gaps_test.
+Augmented audio (guitab/augment.py, scripts/build_aug_cache.py) only changes the features: AUG_CACHE holds
+<name>__aug<k>.npy (training copies) and <name>__deg.npy (held-out degraded test copies), with the labels
+of the original track.
 """
 
 import csv
@@ -19,7 +22,7 @@ from .audio import FPS, compute_cqt, load_audio
 from .gaps import GAPS_SPLITS, audio_path, label_path, safe
 from .guitar import N_FRETS, STRINGS
 from .guitarset import jams_path, string_notes
-from .paths import CACHE, DATA, GAPS, resolve
+from .paths import AUG_CACHE, CACHE, DATA, GAPS, resolve
 
 
 def gaps_notes(label_path):
@@ -113,13 +116,25 @@ def cache_one(item):
     return name
 
 
-def load_split(split, include_shift=True):
+def aug_path(name, variant):
+    """Features of an augmented copy: variant "aug<k>" (training) or "deg" (held-out degraded test copy)."""
+    return AUG_CACHE / f"{name}__{variant}.npy"
+
+
+def load_split(split, include_shift=True, aug_copies=0, variant=None):
+    """aug_copies: attach that many augmented feature copies per track as tr["aug"] (memory-mapped);
+    variant "deg": replace the features with the degraded copy (robustness evaluation)."""
     items = [t for t in tracks() if t[4] == split and (include_shift or t[3] == 0)]
     data = []
     for name, audio, labels, shift, _ in items:
         z = np.load(CACHE / f"{name}.npz")
         onset = z["onset"].astype(np.int8)
         unk = z["unk"] if "unk" in z.files else np.zeros(len(z["feat"]), dtype=np.uint8)
-        data.append({"name": name, "audio": audio, "labels": labels, "shift": shift, "feat": z["feat"], "tab": z["tab"],
-                     "onset": onset, "unk": unk, "source": "gaps" if name.startswith("gaps_") else "guitarset"})
+        tr = {"name": name, "audio": audio, "labels": labels, "shift": shift, "feat": z["feat"], "tab": z["tab"],
+              "onset": onset, "unk": unk, "source": "gaps" if name.startswith("gaps_") else "guitarset"}
+        if variant:
+            tr["feat"] = np.load(aug_path(name, variant))
+        if aug_copies:
+            tr["aug"] = [np.load(aug_path(name, f"aug{k}"), mmap_mode="r") for k in range(aug_copies)]
+        data.append(tr)
     return data

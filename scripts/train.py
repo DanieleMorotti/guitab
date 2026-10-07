@@ -12,6 +12,11 @@ checkpoint maximises the mean of GuitarSet string/fret F1 and GAPS pitch F1.
 Augmentation on the CQT: pitch roll up 0-2 semitones (frets shifted, fret > 19 ignored), level /
 noise floor / spectral tilt changes, short time masks.
 
+Audio augmentation (E12): with --aug_copies k, each training track gets k phone/room renderings
+(scripts/build_aug_cache.py); a crop uses one of them with probability --aug_share. With --eval_degraded,
+validation also scores the held-out degraded copies, and the best checkpoint maximises the mean of the
+clean and degraded selection scores. --init starts from another checkpoint's weights (fine-tuning).
+
 Launch through scripts/train_mid*.sh (memory cap, low priority, resume), e.g.
     nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &
 """
@@ -38,7 +43,7 @@ from guitab.guitarset import jams_path  # noqa: E402
 from guitab.model import TabModel, count_params, pitch_targets  # noqa: E402
 
 
-def sample_batch(pools, batch, length, augment, rng, tab_weights):
+def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0):
     """pools: [(share, tracks, length weights)]; returns x, tab, onset, unk, per-sample tab weight."""
     xs, tabs, onsets, unks, ws = [], [], [], [], []
     shares = [p[0] for p in pools]
@@ -47,7 +52,10 @@ def sample_batch(pools, batch, length, augment, rng, tab_weights):
         tr = tracks[rng.choices(range(len(tracks)), weights)[0]]
         n = len(tr["feat"])
         s = rng.randint(0, max(n - length, 0))
-        x = np.asarray(tr["feat"][s:s + length], dtype=np.float32)
+        feat = tr["feat"]
+        if aug_share and tr.get("aug") and rng.random() < aug_share:
+            feat = tr["aug"][rng.randrange(len(tr["aug"]))]
+        x = np.asarray(feat[s:s + length], dtype=np.float32)
         tab = tr["tab"][s:s + length].astype(np.int64)
         on = tr["onset"][s:s + length].astype(np.float32)
         unk = tr["unk"][s:s + length].astype(np.float32)
@@ -120,6 +128,10 @@ def main():
     parser.add_argument("--gaps_share", type=float, default=0.0, help="probability a crop comes from GAPS")
     parser.add_argument("--gaps_tab_weight", type=float, default=0.5, help="tab-loss weight of GAPS string labels")
     parser.add_argument("--max_steps_now", type=int, default=None, help="stop after this many steps (benchmarking)")
+    parser.add_argument("--init", default=None, help="start from this checkpoint's weights (fresh optimizer, step 0)")
+    parser.add_argument("--aug_copies", type=int, default=0, help="augmented audio copies per training track")
+    parser.add_argument("--aug_share", type=float, default=0.0, help="probability a crop uses an augmented copy")
+    parser.add_argument("--eval_degraded", action="store_true", help="also validate on the degraded copies")
     args = parser.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -128,7 +140,7 @@ def main():
     rng = random.Random(0)
     torch.manual_seed(0)
 
-    train = load_split("train")
+    train = load_split("train", aug_copies=args.aug_copies)
     val = load_split("validation", include_shift=False)
     ref_cache = {tr["name"]: ref_notes(jams_path(tr["name"])) for tr in val}
     weights = [len(t["feat"]) for t in train]
@@ -136,7 +148,7 @@ def main():
     print(f"GuitarSet train tracks {len(train)} ({sum(weights) / 86.13 / 3600:.1f} h), val tracks {len(val)}", flush=True)
     gaps_val, gaps_ref_cache = [], {}
     if args.gaps_share > 0:
-        gtrain = load_split("gaps_train")
+        gtrain = load_split("gaps_train", aug_copies=args.aug_copies)
         gaps_val = load_split("gaps_validation")
         gaps_ref_cache = {tr["name"]: gaps_ref(tr["labels"]) for tr in gaps_val}
         gw = [len(t["feat"]) for t in gtrain]
@@ -144,8 +156,15 @@ def main():
         print(f"GAPS train pieces {len(gtrain)} ({sum(gw) / 86.13 / 3600:.1f} h), val pieces {len(gaps_val)}, "
               f"share {args.gaps_share}", flush=True)
     tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight}
+    if args.eval_degraded:
+        val_deg = load_split("validation", include_shift=False, variant="deg")
+        gaps_val_deg = load_split("gaps_validation", variant="deg") if gaps_val else []
 
-    model = TabModel(args.size).to(device)
+    model = TabModel(args.size)
+    if args.init:
+        model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=False)["model"])
+        print(f"initialised from {args.init}", flush=True)
+    model = model.to(device)
     print(f"model {args.size}: {count_params(model) / 1e6:.1f}M params", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
 
@@ -173,7 +192,7 @@ def main():
     t0, run = time.time(), {}
     start_step = step
     while step < args.steps:
-        x, tab, onset, unk, tab_w = sample_batch(pools, args.batch, args.length, True, rng, tab_weights)
+        x, tab, onset, unk, tab_w = sample_batch(pools, args.batch, args.length, True, rng, tab_weights, args.aug_share)
         x, tab, onset, unk, tab_w = x.to(device), tab.to(device), onset.to(device), unk.to(device), tab_w.to(device)
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
@@ -205,11 +224,24 @@ def main():
                 gp, ga = evaluate_gaps(model, gaps_val, device, gaps_ref_cache)
                 rec.update(gaps_pitch=gp, gaps_string_agree=ga)
                 sel = 0.5 * (sf + gp)
+            if args.eval_degraded:
+                dsf, dpf = evaluate_guitarset(model, val_deg, device, ref_cache)
+                rec.update(deg_val_sf=dsf, deg_val_pitch=dpf)
+                deg_sel = dsf
+                if gaps_val:
+                    dgp, dga = evaluate_gaps(model, gaps_val_deg, device, gaps_ref_cache)
+                    rec.update(deg_gaps_pitch=dgp, deg_gaps_string_agree=dga)
+                    deg_sel = 0.5 * (dsf + dgp)
+                sel = 0.5 * (sel + deg_sel)
             if sel > best:
                 best = sel
                 save("best.pt")
             save("last.pt")
             extra = f", GAPS pitch F1 {rec['gaps_pitch']:.4f}, GAPS string agreement {rec['gaps_string_agree']:.4f}" if gaps_val else ""
+            if args.eval_degraded:
+                extra += f" | degraded: val string/fret F1 {rec['deg_val_sf']:.4f}, pitch F1 {rec['deg_val_pitch']:.4f}"
+                if gaps_val:
+                    extra += f", GAPS pitch F1 {rec['deg_gaps_pitch']:.4f}, GAPS string agreement {rec['deg_gaps_string_agree']:.4f}"
             print(f"EVAL step {step}: val string/fret F1 {sf:.4f}, pitch F1 {pf:.4f}{extra} (best {best:.4f})", flush=True)
             log.write(json.dumps(rec) + "\n")
             log.flush()

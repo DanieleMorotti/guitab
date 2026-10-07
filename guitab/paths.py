@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 RUNS = ROOT / "runs"
 CACHE = DATA / "tabmodel_cache"           # CQT features + frame labels (scripts/build_cache.py)
+AUG_CACHE = DATA / "tabmodel_cache_aug"   # CQT of augmented / degraded audio (scripts/build_aug_cache.py)
 GUITARSET = DATA / "guitarset"            # annotation/ (JAMS), audio_mic/
 GUITARSET_SHIFT = DATA / "guitarset_shift"
 GAPS = DATA / "gaps"

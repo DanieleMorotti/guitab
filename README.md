@@ -57,6 +57,7 @@ guitab/
 │   ├── inference.py        sliding-window prediction + note extraction (DEFAULT_PARAMS)
 │   ├── tab.py              beat tracking, quantisation, tab tokens, .gp5 export
 │   ├── fingering.py        Viterbi fingering optimiser (+ presets)
+│   ├── augment.py          audio augmentation (phone / room renderings) and the held-out degradation
 │   ├── data.py             frame labels, track lists, splits, feature cache
 │   ├── guitarset.py        GuitarSet notes and splits
 │   ├── gaps.py             GAPS case-safe files and string/fret labels
@@ -71,7 +72,7 @@ guitab/
 │   not versioned (.gitignore): rebuilt by the scripts or produced by training
 ├── .venv/                  Python environment
 ├── data/                   guitarset/, guitarset_shift/, gaps/, tabmodel_cache/, models/ (Beat This!), certs/,
-│                           guitarset.csv, guitarset_shift.csv (track lists with repo-relative paths)
+│                           tabmodel_cache_aug/, guitarset.csv, guitarset_shift.csv (track lists with repo-relative paths)
 ├── runs/                   checkpoints (best.pt), training logs, sweep results
 └── out/                    your transcriptions
 ```
@@ -121,6 +122,13 @@ mkdir -p data/gaps && curl -L -o data/gaps/gaps_v1_no_audio.zip \
 ```bash
 .venv/bin/python scripts/build_cache.py --workers 4
 ```
+**Audio-augmented features** (`guitab/augment.py`; phone/room renderings, labels unchanged; about 15 min, 4.7 GB):
+```bash
+.venv/bin/python scripts/build_aug_cache.py --copies 2 --workers 4   # 2 training copies per train / gaps_train track
+.venv/bin/python scripts/build_aug_cache.py --degraded --workers 4   # held-out degraded copies of validation / test
+```
+Score the degraded copies with `--variant deg` on `evaluate.py` and `evaluate_gaps.py` (robustness to phone / room audio).
+
 The GAPS selection (standard tuning, MIDI matches the score, ≥ 50% of notes with a string label) is in `guitab/data.py`
 (`gaps_selection`). It gives 123 train, 14 validation and 19 test pieces.
 
@@ -129,6 +137,7 @@ The GAPS selection (standard tuning, MIDI matches the score, ≥ 50% of notes wi
 ```bash
 nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &   # E10: GuitarSet + GAPS (best)
 nohup scripts/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: GuitarSet only
+nohup scripts/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1 &   # E12: E10 fine-tuned with audio augmentation
 grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
 - **Options:** both launch scripts call `scripts/train.py`.
@@ -138,6 +147,8 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
   - `--gaps_share` — the share of 5 s crops taken from GAPS.
   - `--gaps_tab_weight` — the loss weight of GAPS string labels.
   - `--eval_every`.
+  - `--init` — start from a checkpoint's weights (fine-tuning); `--aug_copies` / `--aug_share` — audio-augmented copies
+    and the share of crops that use one; `--eval_degraded` — also validate on the degraded copies.
 - **Memory:** the scripts cap GPU memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.35`, `LOW=0.25`; about 8 GB for `mid` at batch 16)
   and run at low priority, so the laptop stays usable. Training runs at about 1.1 s per step; 16k steps take about 5 h.
 - **Resume / pause:** the scripts pass `--resume`, so re-running one continues from `last.pt`.
@@ -170,7 +181,8 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 | `prepare_guitarset.py`, `guitarset_shift.py` | GuitarSet track list; pitch-shifted copies. |
 | `gaps_extract.py`, `gaps_download.py`, `gaps_labels.py` | GAPS case-safe extraction, audio download, string/fret labels. |
 | `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
-| `train.py`, `train_mid.sh`, `train_mid_gaps.sh` | Training (the `.sh` files are the exact E8 / E10 runs). |
+| `build_aug_cache.py` | CQT of augmented (training) and degraded (robustness test) audio → `data/tabmodel_cache_aug/`. |
+| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 runs). |
 | `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
 | `analyze_errors.py` | Error breakdown on validation and train subsets: miss / false-note categories, string accuracy, generalisation gap. |
 

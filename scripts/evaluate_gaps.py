@@ -24,9 +24,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoints", nargs="+", required=True)
     parser.add_argument("--split", default="gaps_test")
+    parser.add_argument("--variant", default=None, help='"deg": score the held-out degraded copies (robustness)')
     args = parser.parse_args()
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    data = load_split(args.split)
+    data = load_split(args.split, variant=args.variant)
     refs = {tr["name"]: gaps_ref(tr["labels"]) for tr in data}
     print(f"{args.split}: {len(data)} pieces, {sum(len(r) for r in refs.values())} notes")
     for ckpt in args.checkpoints:
