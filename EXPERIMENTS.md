@@ -591,7 +591,7 @@ GAPS validation, and every 3rd GuitarSet validation track):
   the lows. To avoid tuning training to our own held-out recipe, that run would need a new held-out recipe, for example
   real recorded impulse responses.
 
-### E13 — Adding a SynthTab fingerstyle subset (`runs/tabmodel_mid_gaps_synth`) — RUNNING
+### E13 — Adding a SynthTab fingerstyle subset (`runs/tabmodel_mid_gaps_synth`) — DONE, not adopted yet (mixed; awaiting the listening check)
 **Goal:** improve dense fingerstyle chords. The user hears good melodies but weak multi-note passages on their recording,
 and A1 agrees: GAPS validation misses 40% of notes when 4+ notes sound together, vs ~8% for single notes.
 That needs audio with *correct* labels for dense polyphony. Self-training cannot provide it (the teacher is weakest exactly there),
@@ -651,3 +651,59 @@ so we use SynthTab: DadaGP tabs rendered with sampled guitars.
 - clean and degraded real validation not worse than E12 by more than about .005;
 - a clear gain on dense polyphony: the A1 miss rate for 4+ simultaneous notes on GAPS validation (E10: .40);
 - then test once, plus the demo tab.
+
+**Validation by step** (full tracks; E12 in the first column):
+
+| | E12 | 1k | 2k | 3k | 4k | 5k | 6k | 7k | 8k |
+|---|---|---|---|---|---|---|---|---|---|
+| clean GuitarSet string/fret | .812 | .790 | .805 | .799 | .798 | .806 | .808 | .810 | .807 |
+| clean GuitarSet pitch | .834 | .825 | .841 | .829 | .830 | .834 | .839 | .840 | .838 |
+| clean GAPS pitch | .883 | .885 | .883 | .883 | .886 | .886 | .883 | .888 | .888 |
+| degraded GuitarSet string/fret | .625 | .530 | .560 | .581 | .587 | .610 | .578 | .595 | .599 |
+| degraded GAPS pitch | .732 | .728 | .721 | .715 | .737 | .738 | .726 | .740 | .740 |
+| SynthTab string/fret | .700 | .890 | .896 | .881 | .906 | .911 | .907 | .911 | .909 |
+
+- **Best checkpoint:** step 5000 → `best.pt` (selection .7600; 7k and 8k were close at .758).
+- **Re-tuning on clean validation:** onset 0.6, frame 0.5 (default 0.6), legato 8, orphan off.
+  - Tuned validation chunks: .7699 / .7440 (E12 .7661 / .7449). Degraded: .6163 / .5174 (E12 .6210 / .5346).
+  - The test below used `DEFAULT_PARAMS` (frame 0.6), like E12's test; in earlier tunings, frame 0.5 vs 0.6 changed scores by < .001.
+
+**Dense polyphony** (A1 miss rates; `poly>=4` = 4+ reference notes sounding at the attack):
+
+| Set | Model | pitch P / R / F1 | miss, 1 note (long) | miss, 2–3 (long) | **miss, 4+ (long)** | **miss, 4+ (< 120 ms)** |
+|---|---|---|---|---|---|---|
+| GuitarSet validation | E12 | .815 / .828 / .822 | .104 | .183 | .154 | .335 |
+| | E13 | .795 / .854 / .823 | .094 | .165 | **.122** | **.265** |
+| GAPS validation | E12 | .898 / .859 / .878 | .078 | .114 | .401 | .533 |
+| | E13 | .891 / .869 / .880 | .073 | .110 | **.345** | .533 |
+| GAPS test | E12 | .874 / .761 / .813 | .137 | .177 | .394 | .460 |
+| | E13 | .853 / .786 / .818 | .130 | .166 | **.319** | **.260** |
+
+**Test (once):**
+
+| Test set | Metric | E12 | E13 |
+|---|---|---|---|
+| GuitarSet player 05 chunks, clean | time pitch / string-fret F1 | .8595 / .8265 | .8566 / .8201 |
+| GuitarSet test, degraded | time pitch / string-fret F1 | .7295 / .6448 | .7329 / .6296 |
+| GAPS test, clean | pitch F1 / string agreement | .8147 / .8493 | **.8199 / .8786** |
+| GAPS test, degraded | pitch F1 / string agreement | .6740 / .7573 | .6738 / .7483 |
+
+**Reading:**
+- **The goal is met: dense chords.** With 4+ notes sounding, misses drop by about a quarter to a half on every set
+  (GAPS test, long notes .394 → .319; short notes .460 → .260). Recall rises everywhere: GuitarSet validation .828 → .854, GAPS test .761 → .786.
+- **Cost: precision.** GuitarSet validation .815 → .795, GAPS test .874 → .853: more extra notes. Net F1 is about flat.
+- **Strings:** GAPS string agreement jumps (+.029 on clean test), but GuitarSet string/fret is a little worse
+  (clean −.006, degraded −.015).
+  - **Likely cause:** SynthTab renders each string's MIDI through a sampled-guitar plugin (Ample Guitar via DawDreamer,
+    `MIDI_to_Audio/render_acoustic.py`). Such plugins choose their own string position, so SynthTab string labels are tab-writer
+    choices that are probably not audible. That suits GAPS (also score fingerings) and not GuitarSet (real players).
+- **Phone/room robustness:** slightly worse on GuitarSet string/fret. SynthTab is clean studio audio with only 1 augmented copy.
+- **Adoption rule:** dense-polyphony gain yes; "real validation within .005 of E12" no (degraded GuitarSet string/fret −.015 to −.017).
+  So E13 is **not** made the default automatically. `DEFAULT_CHECKPOINT` stays E12.
+
+**Demo recording:** `out/my_video/my_video_K_synth.gp5`: 544 notes vs 463 for E12 (`my_video_J_aug.gp5`), consistent with the higher recall.
+The listening check decides whether the extra notes are the missing chord notes or false ones.
+
+**From scratch with all data?** Not started. The two weaknesses come from properties of the SynthTab data (inaudible string labels,
+clean audio), which a from-scratch run would inherit. Nothing here shows fine-tuning as the limit: E13 converged and its 5k–8k
+validation is flat. A corrected recipe should be tested first (next options in the summary to the user).
