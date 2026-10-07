@@ -17,6 +17,10 @@ Audio augmentation (E12): with --aug_copies k, each training track gets k phone/
 validation also scores the held-out degraded copies, and the best checkpoint maximises the mean of the
 clean and degraded selection scores. --init starts from another checkpoint's weights (fine-tuning).
 
+SynthTab (E13): with --synth_share > 0, that share of crops comes from the selected SynthTab songs
+(rendered fingerpicked acoustic guitars, exact string/fret labels, tab-loss weight 1). Validation reports
+SynthTab string/fret and pitch F1 (synth_validation) but the best checkpoint is still chosen on real audio.
+
 Launch through scripts/train_mid*.sh (memory cap, low priority, resume), e.g.
     nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &
 """
@@ -132,6 +136,7 @@ def main():
     parser.add_argument("--aug_copies", type=int, default=0, help="augmented audio copies per training track")
     parser.add_argument("--aug_share", type=float, default=0.0, help="probability a crop uses an augmented copy")
     parser.add_argument("--eval_degraded", action="store_true", help="also validate on the degraded copies")
+    parser.add_argument("--synth_share", type=float, default=0.0, help="probability a crop comes from SynthTab")
     args = parser.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -144,7 +149,7 @@ def main():
     val = load_split("validation", include_shift=False)
     ref_cache = {tr["name"]: ref_notes(jams_path(tr["name"])) for tr in val}
     weights = [len(t["feat"]) for t in train]
-    pools = [(1.0 - args.gaps_share, train, weights)]
+    pools = [(1.0 - args.gaps_share - args.synth_share, train, weights)]
     print(f"GuitarSet train tracks {len(train)} ({sum(weights) / 86.13 / 3600:.1f} h), val tracks {len(val)}", flush=True)
     gaps_val, gaps_ref_cache = [], {}
     if args.gaps_share > 0:
@@ -155,7 +160,16 @@ def main():
         pools.append((args.gaps_share, gtrain, gw))
         print(f"GAPS train pieces {len(gtrain)} ({sum(gw) / 86.13 / 3600:.1f} h), val pieces {len(gaps_val)}, "
               f"share {args.gaps_share}", flush=True)
-    tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight}
+    tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight, "synth": 1.0}
+    synth_val, synth_ref_cache = [], {}
+    if args.synth_share > 0:
+        strain = load_split("synth_train", aug_copies=args.aug_copies)
+        synth_val = load_split("synth_validation")
+        synth_ref_cache = {tr["name"]: gaps_ref(tr["labels"]) for tr in synth_val}
+        sw = [len(t["feat"]) for t in strain]
+        pools.append((args.synth_share, strain, sw))
+        print(f"SynthTab train songs {len(strain)} ({sum(sw) / 86.13 / 3600:.1f} h), val songs {len(synth_val)}, "
+              f"share {args.synth_share}", flush=True)
     if args.eval_degraded:
         val_deg = load_split("validation", include_shift=False, variant="deg")
         gaps_val_deg = load_split("gaps_validation", variant="deg") if gaps_val else []
@@ -233,6 +247,9 @@ def main():
                     rec.update(deg_gaps_pitch=dgp, deg_gaps_string_agree=dga)
                     deg_sel = 0.5 * (dsf + dgp)
                 sel = 0.5 * (sel + deg_sel)
+            if synth_val:
+                ssf, spf = evaluate_guitarset(model, synth_val, device, synth_ref_cache)
+                rec.update(synth_sf=ssf, synth_pitch=spf)
             if sel > best:
                 best = sel
                 save("best.pt")
@@ -242,6 +259,8 @@ def main():
                 extra += f" | degraded: val string/fret F1 {rec['deg_val_sf']:.4f}, pitch F1 {rec['deg_val_pitch']:.4f}"
                 if gaps_val:
                     extra += f", GAPS pitch F1 {rec['deg_gaps_pitch']:.4f}, GAPS string agreement {rec['deg_gaps_string_agree']:.4f}"
+            if synth_val:
+                extra += f" | SynthTab val string/fret F1 {rec['synth_sf']:.4f}, pitch F1 {rec['synth_pitch']:.4f}"
             print(f"EVAL step {step}: val string/fret F1 {sf:.4f}, pitch F1 {pf:.4f}{extra} (best {best:.4f})", flush=True)
             log.write(json.dumps(rec) + "\n")
             log.flush()

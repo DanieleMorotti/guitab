@@ -1,6 +1,6 @@
 """Compute CQT features of augmented audio (guitab/augment.py) into data/tabmodel_cache_aug/.
 
-    python scripts/build_aug_cache.py --copies 2 --workers 4   # training copies: <name>__aug<k>.npy for train + gaps_train
+    python scripts/build_aug_cache.py --copies 2 --workers 4   # training copies: <name>__aug<k>.npy for train, gaps_train, synth_train
     python scripts/build_aug_cache.py --degraded --workers 4   # held-out degraded copies: <name>__deg.npy for the
                                                                 # validation / test splits (GuitarSet and GAPS)
 Labels are the original track's (effects keep timing and length). Existing files are kept. Each copy's
@@ -21,7 +21,7 @@ from guitab.augment import degrade, seed_for, train_chain  # noqa: E402
 from guitab.data import aug_path, tracks  # noqa: E402
 from guitab.paths import AUG_CACHE  # noqa: E402
 
-TRAIN_SPLITS = ("train", "gaps_train")
+TRAIN_SPLITS = ("train", "gaps_train", "synth_train")
 EVAL_SPLITS = ("validation", "test", "gaps_validation", "gaps_test")
 
 

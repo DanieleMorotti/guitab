@@ -590,3 +590,64 @@ GAPS validation, and every 3rd GuitarSet validation track):
 - Stronger low cut (high-pass up to about 400 Hz) and longer convolution reverbs in training. Real phone microphones do roll off
   the lows. To avoid tuning training to our own held-out recipe, that run would need a new held-out recipe, for example
   real recorded impulse responses.
+
+### E13 — Adding a SynthTab fingerstyle subset (`runs/tabmodel_mid_gaps_synth`) — RUNNING
+**Goal:** improve dense fingerstyle chords. The user hears good melodies but weak multi-note passages on their recording,
+and A1 agrees: GAPS validation misses 40% of notes when 4+ notes sound together, vs ~8% for single notes.
+That needs audio with *correct* labels for dense polyphony. Self-training cannot provide it (the teacher is weakest exactly there),
+so we use SynthTab: DadaGP tabs rendered with sampled guitars.
+
+**Data** (`scripts/synthtab_fetch.py`, `guitab/synthtab.py`; budget about the size of the existing data):
+- **Download:** SynthTab is 2 TB (acoustic 801 GB: 7 timbres × 4 zip parts of 23–34 GB). Its zips store FLAC uncompressed,
+  so single songs are fetched with HTTP range requests; nothing else is downloaded.
+- **Timbres:** the four fingerpicked acoustic ones, `martin_finger`, `taylor_finger`, `luthier_finger`, `gibson_thumb`
+  (10,584 songs each, same songs).
+- **Selection** (from the JAMS labels): 9,313 songs in standard tuning (399 h). 895 pass the fingerstyle filter:
+  - 60–400 s long, < 15% silence;
+  - mean polyphony 2.2–5;
+  - 15–85% of attacks are chords;
+  - 3–14 notes/s;
+  - 20–65% of notes on strings 4–6;
+  - frets ≤ 19.
+- **Sampling:** random (seed 0), one version per song, ≤ 3 songs per artist. Result: 428 songs, 329 artists
+  (classical, flamenco, acoustic pop / rock):
+  - **synth_train:** 414 songs, 20.6 h; **synth_validation:** 14 songs, 0.7 h;
+  - timbres round-robin (validation happens to use only martin / luthier);
+  - `data/synthtab/selection.csv` is versioned.
+- **Disk:** 5.3 GB audio + 1.1 GB label archive; features +0.7 GB (cache), 1 augmented copy +3.4 GB.
+- **Labels:** per-string MIDI (the files the audio was rendered from): string, fret = pitch − open pitch, exact timing.
+  Mean 2.74 strings sounding when any sounds (GAPS train 1.48).
+- **Rendering latency (found and fixed):**
+  - **Found:** E12 predictions on downloaded songs were systematically late vs the MIDI, by a different amount per timbre.
+    Median over 12 training songs each: taylor 57.5 ms (beyond the ±50 ms tolerance; E12 pitch F1 ≈ .04–.26 on those songs),
+    martin 24.1, gibson 21.4, luthier 16.7 ms. The spread within a timbre is about ±4 ms.
+  - **Not a model bias:** E12's own signed bias on real audio is ~0 (GuitarSet validation −0.7 ms, GAPS validation +0.6 ms),
+    so the delay is in the rendered samples.
+  - **Fix:** labels are shifted by `LATENCY_MS` per timbre. After the shift, held-out validation songs line up at +0.4 ms.
+  - **Other fixes:** songs with an unplayed string have no MIDI file for it (handled). The download retries after TLS drops
+    from the office proxy (one drop stopped the first attempt at 214 songs).
+
+**Training choice: mixed fine-tune from E12, not sequential pretraining.**
+- **Too little data for a pretraining stage:** 20 h of synthetic audio is not a pretraining corpus; the SynthTab paper pretrains on thousands of hours.
+- **A sequential run would forget the chords:** the real-only second stage would mostly overwrite the dense-chord knowledge, because
+  real data has few such passages.
+- **Mixing keeps both:** chord supervision throughout, while real audio keeps the sound realistic.
+- **Starting point:** from E12, which keeps its phone/room robustness; about 3 h instead of 5+ h from scratch.
+
+**Run** (`scripts/train_mid_gaps_synth.sh`):
+- `--init` E12 `best.pt`, 8k steps, learning rate 1e-4, 300 warm-up steps, batch 16;
+- crops: GuitarSet .35 / GAPS .35 / SynthTab .3 (`--synth_share 0.3`); SynthTab tab-loss weight 1 (exact labels);
+- `--aug_copies 2 --aug_share 0.5` (SynthTab has 1 augmented copy);
+- validation as in E12 (clean + degraded real audio decide `best.pt`), plus SynthTab validation, reported only.
+- With `--synth_share 0`, training batches and losses are identical to before (seeded comparison, augmentation share 0 and 0.5).
+
+**Baselines (E12):**
+- training-protocol validation:
+  - clean GuitarSet string/fret / pitch .8115 / .8342, GAPS pitch .8833;
+  - degraded GuitarSet .6253 / .7249, degraded GAPS pitch .7320;
+- SynthTab validation: string/fret .6998, pitch .7886.
+
+**Adoption rule** (fixed before results):
+- clean and degraded real validation not worse than E12 by more than about .005;
+- a clear gain on dense polyphony: the A1 miss rate for 4+ simultaneous notes on GAPS validation (E10: .40);
+- then test once, plus the demo tab.

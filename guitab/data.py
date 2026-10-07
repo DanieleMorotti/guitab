@@ -4,9 +4,10 @@ Labels per frame (11.6 ms) and string (column order STRINGS, low E .. high E):
   tab[t, s]   0 = string silent, 1 + fret for fret 0..19, -100 = ignore (fret > 19 / masked)
   onset[t, s] 1 on the frame closest to a note attack (-1 = ignore)
   unk[t]      1 while a note whose string is unknown sounds (GAPS)
-Tracks: GuitarSet (data/guitarset.csv), its pitch-shifted copies (data/guitarset_shift.csv) and the
-GAPS selection (gaps_selection). Splits: train / validation / test (GuitarSet players 00-03 / 04 / 05),
-gaps_train / gaps_validation / gaps_test.
+Tracks: GuitarSet (data/guitarset.csv), its pitch-shifted copies (data/guitarset_shift.csv), the
+GAPS selection (gaps_selection) and the SynthTab subset (guitab/synthtab.py).
+Splits: train / validation / test (GuitarSet players 00-03 / 04 / 05),
+gaps_train / gaps_validation / gaps_test, synth_train / synth_validation.
 Augmented audio (guitab/augment.py, scripts/build_aug_cache.py) only changes the features: AUG_CACHE holds
 <name>__aug<k>.npy (training copies) and <name>__deg.npy (held-out degraded test copies), with the labels
 of the original track.
@@ -23,6 +24,7 @@ from .gaps import GAPS_SPLITS, audio_path, label_path, safe
 from .guitar import N_FRETS, STRINGS
 from .guitarset import jams_path, string_notes
 from .paths import AUG_CACHE, CACHE, DATA, GAPS, resolve
+from . import synthtab
 
 
 def gaps_notes(label_path):
@@ -94,7 +96,9 @@ def tracks():
     for row in csv.DictReader(open(DATA / "guitarset_shift.csv")):
         base, k = row["sample_id"].rsplit("_up", 1)
         out.append((row["sample_id"], str(resolve(row["audio_path"])), str(jams_path(base)), int(k), row["split"]))
-    return out + gaps_selection()
+    synth = [(f"synth_{r['sid']}", str(synthtab.audio_path(r["sid"])), str(synthtab.label_path(r["sid"])), 0, r["split"])
+             for r in synthtab.selection() if synthtab.audio_path(r["sid"]).exists()]
+    return out + gaps_selection() + synth
 
 
 def compute_track(item):
@@ -122,7 +126,7 @@ def aug_path(name, variant):
 
 
 def load_split(split, include_shift=True, aug_copies=0, variant=None):
-    """aug_copies: attach that many augmented feature copies per track as tr["aug"] (memory-mapped);
+    """aug_copies: attach up to that many augmented feature copies per track as tr["aug"] (memory-mapped, existing ones);
     variant "deg": replace the features with the degraded copy (robustness evaluation)."""
     items = [t for t in tracks() if t[4] == split and (include_shift or t[3] == 0)]
     data = []
@@ -131,10 +135,11 @@ def load_split(split, include_shift=True, aug_copies=0, variant=None):
         onset = z["onset"].astype(np.int8)
         unk = z["unk"] if "unk" in z.files else np.zeros(len(z["feat"]), dtype=np.uint8)
         tr = {"name": name, "audio": audio, "labels": labels, "shift": shift, "feat": z["feat"], "tab": z["tab"],
-              "onset": onset, "unk": unk, "source": "gaps" if name.startswith("gaps_") else "guitarset"}
+              "onset": onset, "unk": unk, "source": name.split("_")[0] if name.startswith(("gaps_", "synth_")) else "guitarset"}
         if variant:
             tr["feat"] = np.load(aug_path(name, variant))
         if aug_copies:
-            tr["aug"] = [np.load(aug_path(name, f"aug{k}"), mmap_mode="r") for k in range(aug_copies)]
+            tr["aug"] = [np.load(aug_path(name, f"aug{k}"), mmap_mode="r") for k in range(aug_copies)
+                         if aug_path(name, f"aug{k}").exists()]
         data.append(tr)
     return data
