@@ -8,7 +8,6 @@ input  log-CQT [B, T, 288] (36 bins/oct from E1)
   -> heads per frame:
        tab    [B, T, 6, 21]  per string: silent or fret 0..19
        onset  [B, T, 6]      per string attack
-       offset [B, T, 6]      per string release (only with offset_head=True, from E11)
        pitch  [B, T, 48]     auxiliary multi-pitch (MIDI 40..87)
 Size presets: "mid" ~22M parameters, "large" ~50M.
 """
@@ -35,7 +34,7 @@ def conv_block(cin, cout):
 
 
 class TabModel(nn.Module):
-    def __init__(self, size="mid", n_classes=21, dropout=0.1, max_len=4096, offset_head=False):
+    def __init__(self, size="mid", n_classes=21, dropout=0.1, max_len=4096):
         super().__init__()
         cfg = SIZES[size]
         c1, c2, c3 = cfg["chans"]
@@ -57,7 +56,6 @@ class TabModel(nn.Module):
         self.tab_head = nn.Linear(d, 6 * n_classes)
         self.onset_head = nn.Linear(d, 6)
         self.pitch_head = nn.Linear(d, N_PITCH_BINS // 3)
-        self.offset_head = nn.Linear(d, 6) if offset_head else None
         self.n_classes = n_classes
 
     def harmonic_stack(self, x):
@@ -71,14 +69,11 @@ class TabModel(nn.Module):
         h = h.permute(0, 2, 1, 3).reshape(b, t, -1)
         h = self.proj(h) + self.pos[:, :t]
         h = self.norm(self.encoder(h))
-        out = {
+        return {
             "tab": self.tab_head(h).view(b, t, 6, self.n_classes),
             "onset": self.onset_head(h),
             "pitch": self.pitch_head(h),
         }
-        if self.offset_head is not None:
-            out["offset"] = self.offset_head(h)
-        return out
 
 
 def pitch_targets(tab):

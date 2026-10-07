@@ -12,10 +12,6 @@ checkpoint maximises the mean of GuitarSet string/fret F1 and GAPS pitch F1.
 Augmentation on the CQT: pitch roll up 0-2 semitones (frets shifted, fret > 19 ignored), level /
 noise floor / spectral tilt changes, short time masks.
 
---onset_target regression (E11): the onset head learns a soft attack target around the exact attack time
-and a new offset head learns the release (data.regression_targets, plain BCE); validation then decodes
-with sub-frame attack times and release peaks (--eval_params).
-
 Launch through scripts/train_mid*.sh (memory cap, low priority, resume), e.g.
     nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &
 """
@@ -43,9 +39,8 @@ from guitab.model import TabModel, count_params, pitch_targets  # noqa: E402
 
 
 def sample_batch(pools, batch, length, augment, rng, tab_weights):
-    """pools: [(share, tracks, length weights)]; returns x, tab, onset, unk, per-sample tab weight, and offset
-    when the tracks have release targets (load_split(..., targets="regression"))."""
-    xs, tabs, onsets, unks, ws, offs = [], [], [], [], [], []
+    """pools: [(share, tracks, length weights)]; returns x, tab, onset, unk, per-sample tab weight."""
+    xs, tabs, onsets, unks, ws = [], [], [], [], []
     shares = [p[0] for p in pools]
     for _ in range(batch):
         _, tracks, weights = pools[rng.choices(range(len(pools)), shares)[0]]
@@ -56,14 +51,12 @@ def sample_batch(pools, batch, length, augment, rng, tab_weights):
         tab = tr["tab"][s:s + length].astype(np.int64)
         on = tr["onset"][s:s + length].astype(np.float32)
         unk = tr["unk"][s:s + length].astype(np.float32)
-        off = tr["offset"][s:s + length] if "offset" in tr else None
         if len(x) < length:
             pad = length - len(x)
             x = np.pad(x, ((0, pad), (0, 0)))
             tab = np.pad(tab, ((0, pad), (0, 0)))
             on = np.pad(on, ((0, pad), (0, 0)))
             unk = np.pad(unk, (0, pad))
-            off = None if off is None else np.pad(off, ((0, pad), (0, 0)))
         if augment:
             k = rng.choice([0, 0, 1, 2])
             if k:
@@ -86,46 +79,28 @@ def sample_batch(pools, batch, length, augment, rng, tab_weights):
         onsets.append(on)
         unks.append(unk)
         ws.append(tab_weights.get(tr["source"], 1.0))
-        offs.append(off)
-    out = (torch.from_numpy(np.stack(xs)), torch.from_numpy(np.stack(tabs)), torch.from_numpy(np.stack(onsets)),
-           torch.from_numpy(np.stack(unks)), torch.tensor(ws, dtype=torch.float32))
-    if offs[0] is not None:
-        out += (torch.from_numpy(np.stack(offs)),)
-    return out
+    return (torch.from_numpy(np.stack(xs)), torch.from_numpy(np.stack(tabs)), torch.from_numpy(np.stack(onsets)),
+            torch.from_numpy(np.stack(unks)), torch.tensor(ws, dtype=torch.float32))
 
 
-def loss_fn(out, tab, onset, unk, tab_w, offset=None):
-    """tab -100 = ignore; onset -1 = ignore; unk frames (unknown-string notes) skip the pitch loss.
-
-    offset given (regression targets): onset and offset are soft targets in [0, 1] learned with plain BCE;
-    otherwise onset is the frame target (1 on the attack frame, +-1 neighbours at 0.5, positive weight 5)."""
+def loss_fn(out, tab, onset, unk, tab_w):
+    """tab -100 = ignore; onset -1 = ignore; unk frames (unknown-string notes) skip the pitch loss."""
     b, t = tab.shape[:2]
     ce = F.cross_entropy(out["tab"].reshape(-1, N_CLASSES).float(), tab.reshape(-1), ignore_index=-100, reduction="none")
     valid = (tab.reshape(-1) != -100).float()
     w = tab_w[:, None, None].expand(b, t, 6).reshape(-1) * valid
     tab_loss = (ce * w).sum() / w.sum().clamp(min=1.0)
+    # soft onset targets: +-1 frame neighbours at 0.5 tolerate annotation jitter
     on_mask = (onset >= 0).float()
-    parts = {}
-    if offset is None:
-        # soft onset targets: +-1 frame neighbours at 0.5 tolerate annotation jitter
-        pos = onset.clamp(min=0)
-        soft = torch.maximum(pos, 0.5 * (F.pad(pos, (0, 0, 1, 0))[:, :-1] + F.pad(pos, (0, 0, 0, 1))[:, 1:]).clamp(max=1))
-        on_bce = F.binary_cross_entropy_with_logits(out["onset"].float(), soft, pos_weight=torch.tensor(5.0, device=soft.device),
-                                                    reduction="none")
-        on_loss = (on_bce * on_mask).sum() / on_mask.sum().clamp(min=1.0)
-        off_loss = 0.0
-    else:
-        on_bce = F.binary_cross_entropy_with_logits(out["onset"].float(), onset.float().clamp(min=0), reduction="none")
-        on_loss = (on_bce * on_mask).sum() / on_mask.sum().clamp(min=1.0)
-        off_mask = (offset >= 0).float()
-        off_bce = F.binary_cross_entropy_with_logits(out["offset"].float(), offset.float().clamp(min=0), reduction="none")
-        off_loss = (off_bce * off_mask).sum() / off_mask.sum().clamp(min=1.0)
-        parts["offset"] = off_loss.item()
+    pos = onset.clamp(min=0)
+    soft = torch.maximum(pos, 0.5 * (F.pad(pos, (0, 0, 1, 0))[:, :-1] + F.pad(pos, (0, 0, 0, 1))[:, 1:]).clamp(max=1))
+    on_bce = F.binary_cross_entropy_with_logits(out["onset"].float(), soft, pos_weight=torch.tensor(5.0, device=soft.device),
+                                                reduction="none")
+    on_loss = (on_bce * on_mask).sum() / on_mask.sum().clamp(min=1.0)
     p_mask = (1.0 - unk)[:, :, None]
     p_bce = F.binary_cross_entropy_with_logits(out["pitch"].float(), pitch_targets(tab.clamp(min=0)), reduction="none")
     pitch_loss = (p_bce * p_mask).sum() / (p_mask.sum() * p_bce.shape[-1]).clamp(min=1.0)
-    return (tab_loss + on_loss + off_loss + 0.5 * pitch_loss,
-            {"tab": tab_loss.item(), "onset": on_loss.item(), "pitch": pitch_loss.item(), **parts})
+    return tab_loss + on_loss + 0.5 * pitch_loss, {"tab": tab_loss.item(), "onset": on_loss.item(), "pitch": pitch_loss.item()}
 
 
 def main():
@@ -145,9 +120,6 @@ def main():
     parser.add_argument("--gaps_share", type=float, default=0.0, help="probability a crop comes from GAPS")
     parser.add_argument("--gaps_tab_weight", type=float, default=0.5, help="tab-loss weight of GAPS string labels")
     parser.add_argument("--max_steps_now", type=int, default=None, help="stop after this many steps (benchmarking)")
-    parser.add_argument("--onset_target", default="frame", choices=["frame", "regression"],
-                        help="regression: soft attack target + release head (E11)")
-    parser.add_argument("--eval_params", default=None, help="JSON note-extraction params for validation")
     args = parser.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -156,10 +128,7 @@ def main():
     rng = random.Random(0)
     torch.manual_seed(0)
 
-    regression = args.onset_target == "regression"
-    targets = "regression" if regression else "frame"
-    eval_params = json.loads(args.eval_params) if args.eval_params else None
-    train = load_split("train", targets=targets)
+    train = load_split("train")
     val = load_split("validation", include_shift=False)
     ref_cache = {tr["name"]: ref_notes(jams_path(tr["name"])) for tr in val}
     weights = [len(t["feat"]) for t in train]
@@ -167,7 +136,7 @@ def main():
     print(f"GuitarSet train tracks {len(train)} ({sum(weights) / 86.13 / 3600:.1f} h), val tracks {len(val)}", flush=True)
     gaps_val, gaps_ref_cache = [], {}
     if args.gaps_share > 0:
-        gtrain = load_split("gaps_train", targets=targets)
+        gtrain = load_split("gaps_train")
         gaps_val = load_split("gaps_validation")
         gaps_ref_cache = {tr["name"]: gaps_ref(tr["labels"]) for tr in gaps_val}
         gw = [len(t["feat"]) for t in gtrain]
@@ -176,8 +145,7 @@ def main():
               f"share {args.gaps_share}", flush=True)
     tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight}
 
-    arch = {"offset_head": regression, "onset_target": args.onset_target}
-    model = TabModel(args.size, offset_head=regression).to(device)
+    model = TabModel(args.size).to(device)
     print(f"model {args.size}: {count_params(model) / 1e6:.1f}M params", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
 
@@ -197,21 +165,21 @@ def main():
         print(f"resumed at step {step}, best {best:.4f}", flush=True)
 
     def save(name):
-        torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "step": step, "best": best, "size": args.size,
-                    "arch": arch, "eval_params": eval_params}, out / name)
+        torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "step": step, "best": best, "size": args.size},
+                   out / name)
 
     log = open(out / "log.jsonl", "a")
     model.train()
     t0, run = time.time(), {}
     start_step = step
     while step < args.steps:
-        batch = [b.to(device) for b in sample_batch(pools, args.batch, args.length, True, rng, tab_weights)]
-        x, labels = batch[0], batch[1:]
+        x, tab, onset, unk, tab_w = sample_batch(pools, args.batch, args.length, True, rng, tab_weights)
+        x, tab, onset, unk, tab_w = x.to(device), tab.to(device), onset.to(device), unk.to(device), tab_w.to(device)
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
         with torch.autocast("mps", dtype=torch.bfloat16, enabled=args.bf16):
             pred = model(x)
-        loss, parts = loss_fn(pred, *labels)
+        loss, parts = loss_fn(pred, tab, onset, unk, tab_w)
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -230,11 +198,11 @@ def main():
         if args.max_steps_now and step - start_step >= args.max_steps_now:
             break
         if step % args.eval_every == 0 or step == args.steps:
-            sf, pf = evaluate_guitarset(model, val, device, ref_cache, eval_params)
+            sf, pf = evaluate_guitarset(model, val, device, ref_cache)
             rec = {"step": step, "val_sf": sf, "val_pitch": pf}
             sel = sf
             if gaps_val:
-                gp, ga = evaluate_gaps(model, gaps_val, device, gaps_ref_cache, eval_params)
+                gp, ga = evaluate_gaps(model, gaps_val, device, gaps_ref_cache)
                 rec.update(gaps_pitch=gp, gaps_string_agree=ga)
                 sel = 0.5 * (sf + gp)
             if sel > best:

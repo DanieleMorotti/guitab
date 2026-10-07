@@ -9,9 +9,6 @@ Notes are extracted per string:
     fret changes for `legato` consecutive frames (hammer-on / pull-off / slide -> new note);
   - the same pitch started on two strings within `dedup` frames is one note played once: only the
     note whose fret posterior (mean over its frames) is higher is kept (0 = off).
-Models with a release head (E11, onset_target "regression"):
-  - `subframe`: the attack time is refined by a parabola through the onset peak and its neighbours;
-  - a note also ends at a release peak (local max of the offset probability >= `offset`).
 """
 
 import numpy as np
@@ -22,24 +19,22 @@ from .guitar import OPEN_PITCH, STRINGS
 from .model import TabModel
 
 # tuned on GuitarSet validation (player 04) with scripts/evaluate.py --tune
-DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3, "dedup": 4,
-                  "offset": 0.5, "subframe": False}
+DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3, "dedup": 4}
 
 
 def load_model(checkpoint, device):
     ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    model = TabModel(ckpt["size"], offset_head=ckpt.get("arch", {}).get("offset_head", False))
+    model = TabModel(ckpt["size"])
     model.load_state_dict(ckpt["model"])
     return model.to(device).eval()
 
 
 @torch.no_grad()
 def predict(model, feat, device, win=432, hop=288):
-    """feat [T, 288] -> (tab_probs [T, 6, 21], onset_probs [T, 6], offset_probs [T, 6] or None) with overlapping windows."""
+    """feat [T, 288] -> (tab_probs [T, 6, 21], onset_probs [T, 6]) with overlapping windows."""
     t_total = len(feat)
     tab = np.zeros((t_total, 6, model.n_classes), dtype=np.float32)
     onset = np.zeros((t_total, 6), dtype=np.float32)
-    offset = np.zeros((t_total, 6), dtype=np.float32) if model.offset_head is not None else None
     weight = np.zeros((t_total, 1), dtype=np.float32)
     starts = list(range(0, max(t_total - win, 0) + 1, hop))
     if starts[-1] + win < t_total:
@@ -52,19 +47,11 @@ def predict(model, feat, device, win=432, hop=288):
         w = taper[:n]
         tab[s:s + n] += torch.softmax(out["tab"][0].float(), -1).cpu().numpy() * w[:, :, None]
         onset[s:s + n] += torch.sigmoid(out["onset"][0].float()).cpu().numpy() * w
-        if offset is not None:
-            offset[s:s + n] += torch.sigmoid(out["offset"][0].float()).cpu().numpy() * w
         weight[s:s + n] += w
-    return tab / weight[:, :, None], onset / weight, None if offset is None else offset / weight
+    return tab / weight[:, :, None], onset / weight
 
 
-def peaks_of(x, threshold):
-    """Frames where x is a local maximum (plateaus count once, at their start) and >= threshold."""
-    n = len(x)
-    return [t for t in range(n) if x[t] >= threshold and x[t] >= x[max(t - 1, 0)] and x[t] > x[min(t + 1, n - 1)]]
-
-
-def extract_notes(tab, onset, offset=None, params=None):
+def extract_notes(tab, onset, params=None):
     p = {**DEFAULT_PARAMS, **(params or {})}
     t_total = len(tab)
     notes = []
@@ -73,8 +60,8 @@ def extract_notes(tab, onset, offset=None, params=None):
         active = 1.0 - tab[:, col, 0]
         frets = tab[:, col, 1:].argmax(-1)
         o = onset[:, col]
-        peak_set = set(peaks_of(o, p["onset"]))
-        releases = set(peaks_of(offset[:, col], p["offset"])) if offset is not None else set()
+        peaks = [t for t in range(t_total) if o[t] >= p["onset"] and o[t] >= o[max(t - 1, 0)] and o[t] > o[min(t + 1, t_total - 1)]]
+        peak_set = set(peaks)
         t = 0
         while t < t_total:
             start = None
@@ -89,12 +76,9 @@ def extract_notes(tab, onset, offset=None, params=None):
                 continue
             head = tab[start:start + p["fret_frames"], col, 1:].mean(0)
             fret = int(head.argmax())
-            end, changed, released = start + 1, 0, False
+            end, changed = start + 1, 0
             while end < t_total:
                 if end in peak_set or active[end] <= p["frame"]:
-                    break
-                if end in releases:
-                    released = True
                     break
                 changed = changed + 1 if frets[end] != fret else 0
                 if changed >= p["legato"]:
@@ -103,16 +87,11 @@ def extract_notes(tab, onset, offset=None, params=None):
                 end += 1
             if end - start >= 2 or start in peak_set:
                 score = float(max(o[start], active[start]))
-                t_on = start
-                if p["subframe"] and start in peak_set and 0 < start < t_total - 1:
-                    a, b, c = o[start - 1], o[start], o[start + 1]
-                    curv = a - 2 * b + c
-                    t_on = start + (float(np.clip(0.5 * (a - c) / curv, -0.5, 0.5)) if curv < 0 else 0.0)
-                notes.append({"onset": t_on / FPS, "offset": end / FPS, "string": string, "fret": fret,
+                notes.append({"onset": start / FPS, "offset": end / FPS, "string": string, "fret": fret,
                               "pitch": OPEN_PITCH[string] + fret, "score": score,
                               "fret_conf": float(tab[start:max(end, start + 1), col, fret + 1].mean())})
-            # legato change: the next note starts where the fret changed (no onset needed); not after a release
-            if end < t_total and not released and end not in peak_set and active[end] > p["frame"]:
+            # legato change: the next note starts where the fret changed (no onset needed)
+            if end < t_total and end not in peak_set and active[end] > p["frame"]:
                 peak_set.add(end)
             t = max(end, start + 1)
     notes = sorted(notes, key=lambda n: (n["onset"], n["string"]))
@@ -142,5 +121,5 @@ def drop_duplicates(notes, window):
 def transcribe_file(checkpoint, audio_path, device, params=None):
     model = load_model(checkpoint, device)
     feat = compute_cqt(load_audio(audio_path))
-    tab, onset, offset = predict(model, feat, device)
-    return extract_notes(tab, onset, offset, params)
+    tab, onset = predict(model, feat, device)
+    return extract_notes(tab, onset, params)

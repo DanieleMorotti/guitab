@@ -39,7 +39,7 @@ The output is `out/my_video/my_video.gp5`, plus `my_video.tokens.txt` (the tab a
 | `--grid 120` | Quantisation grid in ticks (960 = quarter): 240 = 16th notes (default), 120 = 32nd notes. |
 | `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_mid/best.pt` (GuitarSet only). |
 | `--name X` | Output file stem. |
-| `--params JSON` | Note-extraction settings, e.g. the tuned ones for E11: `--checkpoint runs/tabmodel_mid_gaps_reg/best.pt --params '{"onset": 0.4, "frame": 0.5, "offset": 0.7, "subframe": true}'`. |
+| `--params JSON` | Note-extraction settings (keys of `DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`; `--onset` / `--orphan` apply on top. |
 
 Inference needs about 1–2 GB of GPU memory and takes under a minute for a 4-minute song on an M-series Mac.
 
@@ -129,7 +129,6 @@ The GAPS selection (standard tuning, MIDI matches the score, ≥ 50% of notes wi
 ```bash
 nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &   # E10: GuitarSet + GAPS (best)
 nohup scripts/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: GuitarSet only
-nohup scripts/train_mid_gaps_reg.sh > runs/tabmodel_mid_gaps_reg.log 2>&1 &   # E11: E10 + precise attack targets + release head
 grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
 - **Options:** both launch scripts call `scripts/train.py`.
@@ -139,8 +138,6 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
   - `--gaps_share` — the share of 5 s crops taken from GAPS.
   - `--gaps_tab_weight` — the loss weight of GAPS string labels.
   - `--eval_every`.
-  - `--onset_target regression` — soft attack targets around the exact attack time plus a release head (E11);
-    `--eval_params` — note-extraction settings used for validation during training.
 - **Memory:** the scripts cap GPU memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.35`, `LOW=0.25`; about 8 GB for `mid` at batch 16)
   and run at low priority, so the laptop stays usable. Training runs at about 1.1 s per step; 16k steps take about 5 h.
 - **Resume / pause:** the scripts pass `--resume`, so re-running one continues from `last.pt`.
@@ -173,7 +170,7 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 | `prepare_guitarset.py`, `guitarset_shift.py` | GuitarSet track list; pitch-shifted copies. |
 | `gaps_extract.py`, `gaps_download.py`, `gaps_labels.py` | GAPS case-safe extraction, audio download, string/fret labels. |
 | `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
-| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_reg.sh` | Training (the `.sh` files are the exact E8 / E10 / E11 runs). |
+| `train.py`, `train_mid.sh`, `train_mid_gaps.sh` | Training (the `.sh` files are the exact E8 / E10 runs). |
 | `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
 | `analyze_errors.py` | Error breakdown on validation and train subsets: miss / false-note categories, string accuracy, generalisation gap. |
 

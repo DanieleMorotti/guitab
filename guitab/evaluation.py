@@ -77,12 +77,13 @@ def ref_notes(jams_path, shift=0):
     return out
 
 
-def evaluate_guitarset(model, val, device, ref_cache, params=None):
+def evaluate_guitarset(model, val, device, ref_cache):
     """Mean per-track note F1 (onset +-50 ms) by string/fret and by pitch on full GuitarSet tracks."""
     model.eval()
     sf, pf = [], []
     for tr in val:
-        est = extract_notes(*predict(model, tr["feat"], device), params)
+        tab, onset = predict(model, tr["feat"], device)
+        est = extract_notes(tab, onset)
         ref = ref_cache[tr["name"]]
         sf.append(match_f1(ref, est, key=("string", "fret")))
         pf.append(match_f1(ref, est, key=("pitch",)))
@@ -90,12 +91,13 @@ def evaluate_guitarset(model, val, device, ref_cache, params=None):
     return float(np.mean(sf)), float(np.mean(pf))
 
 
-def evaluate_gaps(model, val, device, ref_cache, params=None):
+def evaluate_gaps(model, val, device, ref_cache):
     """Pitch F1 against all GAPS MIDI notes, and string agreement on pitch-correct notes with known strings."""
     model.eval()
     pf, agree, total = [], 0, 0
     for tr in val:
-        est = extract_notes(*predict(model, tr["feat"], device), params)
+        tab, onset = predict(model, tr["feat"], device)
+        est = extract_notes(tab, onset)
         ref = ref_cache[tr["name"]]
         pf.append(match_f1(ref, est, key=("pitch",)))
         known = [r for r in ref if r["string"]]

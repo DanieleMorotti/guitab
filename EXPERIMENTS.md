@@ -400,7 +400,7 @@ Post-processing only, no retraining; tested on the E10 predictions, chosen on va
 - **Note:** training validation (`evaluate_guitarset` / `evaluate_gaps`) uses `DEFAULT_PARAMS`, so from E11 on the logged
   validation numbers include dedup; compare with the "after" figures above, not with E10's training log.
 
-### E11 — Precise attack targets + release head (`runs/tabmodel_mid_gaps_reg`) — DONE (stopped at 13k), not adopted yet
+### E11 — Precise attack targets + release head (`runs/tabmodel_mid_gaps_reg`) — ABANDONED, code removed
 **Goal:** attack the error classes from A1 that a rule could not fix (D1): spurious and merged re-attacks of a ringing pitch,
 attacks 50–150 ms off, short notes. The backbone, data, sampling, augmentation, steps and seed are the same as E10.
 The change is only in what the heads learn and how notes are built:
@@ -479,3 +479,13 @@ The change is only in what the heads learn and how notes are built:
     --checkpoint runs/tabmodel_mid_gaps_reg/best.pt --params '{"onset": 0.4, "frame": 0.5, "offset": 0.7, "subframe": true}'
   ```
   `transcribe.py --params` was added for this; without it, the output is unchanged (E10 demo byte-identical).
+- **Abandoned (2026-10-07):** the user compared the two demo tabs and preferred E10. The scores were level, and the other
+  options for this approach are small: the last 3k steps, putting the positive weight back on the attack target, or tweaking
+  the release decoding. Each would move results by about ±.005, within noise. The release head also learns only from
+  GuitarSet's ~2 h of real audio (GAPS note lengths come from the score).
+  - **Removed:** the E11 code (regression targets, release head, `--onset_target`, the release decoding and tuning grid,
+    `scripts/train_mid_gaps_reg.sh`), `runs/tabmodel_mid_gaps_reg/` (546 MB) and the E11 demo tab.
+  - **Kept:** D1 (dedup), `scripts/analyze_errors.py` and the generic `transcribe.py --params` option.
+  - **Code at the time of the run:** commits `335a11f` and `37fe2b9`; it can be restored from git if needed.
+  - **Checked after the removal:** the code under `guitab/` and `scripts/` (except `transcribe.py`) is byte-identical to the D1 commit;
+    E10 validation chunks .7672 / .7465; GAPS validation .8824 / .8639; the demo tab `my_video_H_dedup.gp5` is byte-identical.

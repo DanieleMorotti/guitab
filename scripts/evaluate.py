@@ -46,15 +46,8 @@ def main():
     params = {**DEFAULT_PARAMS, **(json.loads(args.params) if args.params else {})}
     if args.tune:
         results = []
-        if next(iter(probs.values()))[2] is None:
-            grid = [{"onset": on, "frame": fr, "orphan": orphan, "legato": legato} for on, fr, orphan, legato
-                    in itertools.product([0.3, 0.4, 0.5, 0.6], [0.3, 0.4, 0.5, 0.6], [True, False], [3, 5, 8])]
-        else:  # release head (E11): also the release threshold (1.01 = releases unused) and sub-frame attack times
-            grid = [{"onset": on, "frame": fr, "orphan": False, "legato": legato, "offset": off, "subframe": sub}
-                    for on, fr, legato, off, sub in itertools.product([0.2, 0.3, 0.4, 0.5, 0.6], [0.4, 0.5, 0.6], [5, 8],
-                                                                      [0.3, 0.5, 0.7, 1.01], [False, True])]
-        for g in grid:
-            prm = {**params, **g}
+        for on, fr, orphan, legato in itertools.product([0.3, 0.4, 0.5, 0.6], [0.3, 0.4, 0.5, 0.6], [True, False], [3, 5, 8]):
+            prm = {**params, "onset": on, "frame": fr, "orphan": orphan, "legato": legato}
             _, s = run(prm)
             results.append((s["tick_string_fret_f1"] + s["time_string_fret_f1"] + s["time_pitch_f1"], prm, s))
         results.sort(key=lambda r: -r[0])

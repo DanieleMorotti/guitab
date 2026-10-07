@@ -46,7 +46,7 @@ def prf(tp, n_ref, n_est):
 
 
 def analyse(items):
-    """items: [(track name, label path, shift, tab probs, onset probs, offset probs or None)]."""
+    """items: [(track name, label path, shift, tab probs, onset probs)]."""
     files = items
     C = Counter()
     fn_cat, fp_cat = Counter(), Counter()
@@ -54,10 +54,10 @@ def analyse(items):
     fret_err = Counter()
     fn_ctx, all_ctx = Counter(), Counter()
     frame = Counter()
-    for stem, labels, shift, tab, onset, offset in items:
+    for stem, labels, shift, tab, onset in items:
         ref = gaps_ref(labels) if labels.endswith(".json") else ref_notes(labels, shift)
         ref = [r for r in ref if r["pitch"] is not None and 40 <= r["pitch"] <= 40 + 19 + 24]
-        est = extract_notes(tab, onset, offset)
+        est = extract_notes(tab, onset)
         pp = match(ref, est, ("pitch",))
         known = [j for j, r in enumerate(ref) if r["string"]]
         C["ref"] += len(ref)

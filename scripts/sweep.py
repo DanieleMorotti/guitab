@@ -96,12 +96,12 @@ def main():
     _, _, probs, labels = splits["test"]
     counts = np.zeros(6, dtype=np.int64)
     note_sf, note_p = [], []
-    for path, (tab, onset, offset) in probs.items():
+    for path, (tab, onset) in probs.items():
         name, lab = labels[path]
         n = min(len(lab), len(tab))
         counts += frame_metrics(tab[:n], lab[:n])
         ref = ref_notes(jams_path(name))
-        est = extract_notes(tab, onset, offset)
+        est = extract_notes(tab, onset)
         note_sf.append(match_f1(ref, est, key=("string", "fret")))
         note_p.append(match_f1(ref, est, key=("pitch",)))
     results["benchmark"] = {
