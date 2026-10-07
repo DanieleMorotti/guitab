@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -41,6 +42,9 @@ def main():
                         help="onset confidence threshold (default 0.6, tuned on GuitarSet validation; lower = more notes).")
     parser.add_argument("--orphan", action="store_true",
                         help="also keep notes whose string sounds without a detected attack (more notes).")
+    parser.add_argument("--params", default=None,
+                        help='JSON note-extraction settings, e.g. the tuned ones of a checkpoint (see EXPERIMENTS.md); '
+                             '--onset / --orphan are applied on top.')
     parser.add_argument("--grid", type=int, default=240, help="Quantization grid in ticks (960 = quarter; 240 = 16th).")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--name", default=None, help="Output file stem (default: audio file stem).")
@@ -48,7 +52,7 @@ def main():
 
     audio_path = Path(args.audio).resolve()
     device = resolve_device(args.device)
-    params = {}
+    params = json.loads(args.params) if args.params else {}
     if args.onset is not None:
         params["onset"] = args.onset
     if args.orphan:

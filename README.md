@@ -39,6 +39,7 @@ The output is `out/my_video/my_video.gp5`, plus `my_video.tokens.txt` (the tab a
 | `--grid 120` | Quantisation grid in ticks (960 = quarter): 240 = 16th notes (default), 120 = 32nd notes. |
 | `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_mid/best.pt` (GuitarSet only). |
 | `--name X` | Output file stem. |
+| `--params JSON` | Note-extraction settings, e.g. the tuned ones for E11: `--checkpoint runs/tabmodel_mid_gaps_reg/best.pt --params '{"onset": 0.4, "frame": 0.5, "offset": 0.7, "subframe": true}'`. |
 
 Inference needs about 1–2 GB of GPU memory and takes under a minute for a 4-minute song on an M-series Mac.
 

@@ -473,3 +473,9 @@ The change is only in what the heads learn and how notes are built:
   on it, together with a listening check on the demo, before choosing the default model.
 - `DEFAULT_CHECKPOINT` stays E10 (`runs/tabmodel_mid_gaps/best.pt`). E11's tuned settings are the ones listed above; pass them
   with `--params` (or via `transcribe.py --onset 0.4`, plus the release settings, once that is wired).
+- **Demo recording:** `out/my_video/my_video_I_e11.gp5` (E11, tuned settings) vs `my_video_H_dedup.gp5` (E10 + D1, the default):
+  ```
+  .venv/bin/python scripts/transcribe.py --audio out/my_video/my_video.wav --out_dir out/my_video --name my_video_I_e11 \
+    --checkpoint runs/tabmodel_mid_gaps_reg/best.pt --params '{"onset": 0.4, "frame": 0.5, "offset": 0.7, "subframe": true}'
+  ```
+  `transcribe.py --params` was added for this; without it, the output is unchanged (E10 demo byte-identical).
