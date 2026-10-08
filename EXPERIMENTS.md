@@ -707,3 +707,53 @@ The listening check decides whether the extra notes are the missing chord notes 
 **From scratch with all data?** Not started. The two weaknesses come from properties of the SynthTab data (inaudible string labels,
 clean audio), which a from-scratch run would inherit. Nothing here shows fine-tuning as the limit: E13 converged and its 5k–8k
 validation is flat. A corrected recipe should be tested first (next options in the summary to the user).
+
+### E14 — Time-sharp low band for bass attacks (`runs/tabmodel_mid_gaps_sharp`) — DONE, no gain, not adopted
+
+**Motivation (user):** in fingerpicking, two notes struck together (thumb bass + finger) often lose the bass.
+The user proposed detecting bass and melody separately. Measured on E12, validation:
+- **Bass is the weak voice of a pinch:** lower note missed 29.6% (GuitarSet) / 25.4% (GAPS), upper note 20.7% / 13.6%.
+- **Low E is the weak string:** string 6 missed 34% on GuitarSet (strings 2–4: 13–16%); fresh (not repeated) notes ≤ A2 missed 45%.
+- **Not a decoding problem:** lowering the onset / frame thresholds of strings 4–6 recovers bass notes (pinch-bass miss
+  .256 → .167) but adds more false notes; F1 drops at every setting.
+- **Suspected cause, the input:** at 36 bins/oct a CQT bin's window is ~51 periods (0.62 s at E2). With a synthetic tone,
+  an E2 attack starts rising 25 frames early. Fresh bass attacks gain only +2.5 dB in their own bin (45% under 2 dB); with
+  4× shorter filters, +6.7 dB.
+
+So separate output heads were not the target (the tab head is already per string). The idea became a separate input view.
+
+**Setup:**
+- The 5 octaves from E1 recomputed with `filter_scale` 0.25 (180 bins, `guitab/audio.py`, cache `data/tabmodel_cache_sharp`, 4.5 GB).
+- Fed as a second 6-channel harmonic stack; the new first-conv weights start at zero (identical outputs to E12 at step 0).
+- Fine-tuned from E12 with E12's recipe (`scripts/train_mid_gaps_sharp.sh`, 6k steps). Best checkpoint: step 6000.
+
+**Validation, bass miss rates** (lower is better; "zeroed" = E14 with the sharp input set to 0):
+
+| Set | Notes | E12 | E14 | E14 zeroed |
+|---|---|---|---|---|
+| GuitarSet val | lower note of a pinch | .296 | .289 | .314 |
+| | fresh ≤ A2 | .454 | .451 | .464 |
+| | string 6 | .343 | .341 | .359 |
+| | above E3 (control) | .141 | .140 | .146 |
+| GAPS val | lower note of a pinch | .254 | .250 | .264 |
+| | fresh ≤ A2 | .144 | .142 | .162 |
+| | string 6 | .152 | .149 | .173 |
+
+**Test (once):**
+
+| Test set | Metric | E12 | E14 |
+|---|---|---|---|
+| GuitarSet player 05 chunks, clean | time pitch / string-fret F1 | .8595 / .8265 | .8599 / .8253 |
+| GuitarSet test, degraded | time pitch / string-fret F1 | .7295 / .6448 | .7279 / .6423 |
+| GAPS test, clean | pitch F1 / string agreement | .8147 / .8493 | .8132 / .8529 |
+| GAPS test, degraded | pitch F1 / string agreement | .6740 / .7573 | .6758 / .7590 |
+
+**Reading:**
+- **No gain.** Bass misses move by under a point, and test scores tie. Demo (`my_video_L_sharp.gp5`): 147 notes on strings 4–6 vs 144 for E12.
+- **The model uses the band:** zeroing it costs 1.5–2.5 points of bass miss rate. But it used the band in place of what it
+  already inferred (harmonics, context), not on top of it.
+- **Why the missed bass notes stay missed:** in the sharp band itself, missed fresh bass notes have a median attack contrast
+  of +3.6 dB on GuitarSet (40% under 2 dB) vs +10.7 dB for detected ones; on GAPS +5.7 dB (34% under 2 dB) vs +12.8 dB.
+  They are also ~7 dB quieter. These are soft thumb strokes, attacks masked by ringing low strings, or (GuitarSet)
+  notes the hexaphonic pickup labels but the microphone barely hears.
+  The information is weak in the audio, not hidden by the representation, so a from-scratch run with the band is not expected to help.
