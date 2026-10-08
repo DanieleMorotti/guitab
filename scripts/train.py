@@ -18,7 +18,8 @@ validation also scores the held-out degraded copies, and the best checkpoint max
 clean and degraded selection scores. --init starts from another checkpoint's weights (fine-tuning).
 
 SynthTab (E13): with --synth_share > 0, that share of crops comes from the selected SynthTab songs
-(rendered fingerpicked acoustic guitars, exact string/fret labels, tab-loss weight 1). Validation reports
+(rendered fingerpicked acoustic guitars, exact pitches; tab-loss weight --synth_tab_weight, default 1, since its
+string choices are the tab writer's and probably not audible). Validation reports
 SynthTab string/fret and pitch F1 (synth_validation) but the best checkpoint is still chosen on real audio.
 
 Launch through scripts/train_mid*.sh (memory cap, low priority, resume), e.g.
@@ -137,6 +138,7 @@ def main():
     parser.add_argument("--aug_share", type=float, default=0.0, help="probability a crop uses an augmented copy")
     parser.add_argument("--eval_degraded", action="store_true", help="also validate on the degraded copies")
     parser.add_argument("--synth_share", type=float, default=0.0, help="probability a crop comes from SynthTab")
+    parser.add_argument("--synth_tab_weight", type=float, default=1.0, help="tab-loss weight of SynthTab string labels")
     args = parser.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -160,7 +162,7 @@ def main():
         pools.append((args.gaps_share, gtrain, gw))
         print(f"GAPS train pieces {len(gtrain)} ({sum(gw) / 86.13 / 3600:.1f} h), val pieces {len(gaps_val)}, "
               f"share {args.gaps_share}", flush=True)
-    tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight, "synth": 1.0}
+    tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight, "synth": args.synth_tab_weight}
     synth_val, synth_ref_cache = [], {}
     if args.synth_share > 0:
         strain = load_split("synth_train", aug_copies=args.aug_copies)

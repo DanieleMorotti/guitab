@@ -3,6 +3,9 @@
 Two recipes, deliberately built from different effects so the test is not a copy of training:
   train_chain  random per track copy (pedalboard): algorithmic room reverb, phone-like band-limiting,
                random EQ peaks, compression, background noise, MP3 encoding.
+  close_chain  (E15, training copy aug2) a phone close to the soundhole, modelled on the user's recording, whose
+               long-term spectrum vs GuitarSet has +10 dB at 70-100 Hz, +4-5 dB at 100-200 Hz, -8 dB at 1-4 kHz:
+               low shelf boost, body resonance peak, dark top, phone compression, light room, noise, MP3.
   degrade      held-out recipe for the robustness test sets: convolution with a synthetic room impulse
                response, zero-phase Butterworth band-pass, pink noise at 20 dB SNR, AAC 64 kbit/s (ffmpeg).
 All effects keep the timing (checked: 0 ms shift) and the length, so the original labels stay valid.
@@ -74,6 +77,40 @@ def train_chain(y, rng):
         out = pb.Pedalboard([pb.MP3Compressor(vbr_quality=q)])(out, SR)
         desc.append(f"mp3 q{q:.1f}")
     return peak_normalise(out), ", ".join(desc) or "clean"
+
+
+def close_chain(y, rng):
+    """One random 'phone close to the guitar' rendering of y. Returns (audio, description)."""
+    import pedalboard as pb
+
+    u = rng.uniform
+    shelf_f, shelf_g = u(100, 220), u(3, 10)
+    res_f, res_g, res_q = float(np.exp(u(np.log(80), np.log(150)))), u(2, 8), u(1.5, 4)
+    top_f, top_g = u(1000, 3000), u(-12, -4)
+    fx = [pb.LowShelfFilter(shelf_f, shelf_g, 0.7), pb.PeakFilter(res_f, res_g, res_q), pb.HighShelfFilter(top_f, top_g, 0.7)]
+    desc = [f"lowshelf {shelf_f:.0f}:{shelf_g:+.0f}", f"body {res_f:.0f}:{res_g:+.0f}/q{res_q:.1f}", f"top {top_f:.0f}:{top_g:+.0f}"]
+    if u() < 0.6:
+        lp = u(5000, 9000)
+        fx.append(pb.LowpassFilter(lp))
+        desc.append(f"lp {lp:.0f}")
+    if u() < 0.5:
+        room, wet = u(0.1, 0.5), u(0.05, 0.25)
+        fx.append(pb.Reverb(room_size=room, damping=u(0.3, 0.8), wet_level=wet, dry_level=1.0 - 0.5 * wet, width=0.0))
+        desc.append(f"reverb {room:.2f}/{wet:.2f}")
+    if u() < 0.8:
+        fx.append(pb.Compressor(threshold_db=u(-35, -15), ratio=u(3, 10), attack_ms=u(1, 10), release_ms=u(50, 250)))
+        desc.append("comp")
+    out = peak_normalise(pb.Pedalboard(fx)(peak_normalise(y), SR))
+    if u() < 0.5:
+        snr, exp = u(20, 40), float(rng.choice([0.0, 1.0, 2.0]))
+        out = add_noise(out, rng, snr, exp)
+        desc.append(f"noise {snr:.0f}dB/{exp:.0f}")
+    out = peak_normalise(out)
+    if u() < 0.5:
+        q = u(2, 7)
+        out = pb.Pedalboard([pb.MP3Compressor(vbr_quality=q)])(out, SR)
+        desc.append(f"mp3 q{q:.1f}")
+    return peak_normalise(out), ", ".join(desc)
 
 
 def room_ir(rng, rt60):
