@@ -192,11 +192,12 @@ def main():
     args = parser.parse_args()
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     model = load_model(args.checkpoint, device)
+    sharp = model.sharp_bins > 0
     sets = {
-        "gs_val": load_split("validation", include_shift=False),
-        "gaps_val": load_split("gaps_validation"),
-        "gs_train": load_split("train", include_shift=False)[::4],
-        "gaps_train": load_split("gaps_train")[::9],
+        "gs_val": load_split("validation", include_shift=False, sharp=sharp),
+        "gaps_val": load_split("gaps_validation", sharp=sharp),
+        "gs_train": load_split("train", include_shift=False, sharp=sharp)[::4],
+        "gaps_train": load_split("gaps_train", sharp=sharp)[::9],
     }
     res = {}
     for name, trs in sets.items():

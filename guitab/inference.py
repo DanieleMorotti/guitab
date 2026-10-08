@@ -14,7 +14,7 @@ Notes are extracted per string:
 import numpy as np
 import torch
 
-from .audio import FPS, compute_cqt, load_audio
+from .audio import FPS, load_audio, model_features
 from .guitar import OPEN_PITCH, STRINGS
 from .model import TabModel
 
@@ -24,14 +24,14 @@ DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orp
 
 def load_model(checkpoint, device):
     ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    model = TabModel(ckpt["size"])
+    model = TabModel(ckpt["size"], sharp_bins=ckpt.get("sharp_bins", 0))
     model.load_state_dict(ckpt["model"])
     return model.to(device).eval()
 
 
 @torch.no_grad()
 def predict(model, feat, device, win=432, hop=288):
-    """feat [T, 288] -> (tab_probs [T, 6, 21], onset_probs [T, 6]) with overlapping windows."""
+    """feat [T, 288] (or [T, 288 + sharp_bins]) -> (tab_probs [T, 6, 21], onset_probs [T, 6]) with overlapping windows."""
     t_total = len(feat)
     tab = np.zeros((t_total, 6, model.n_classes), dtype=np.float32)
     onset = np.zeros((t_total, 6), dtype=np.float32)
@@ -120,6 +120,6 @@ def drop_duplicates(notes, window):
 
 def transcribe_file(checkpoint, audio_path, device, params=None):
     model = load_model(checkpoint, device)
-    feat = compute_cqt(load_audio(audio_path))
+    feat = model_features(load_audio(audio_path), model.sharp_bins > 0)
     tab, onset = predict(model, feat, device)
     return extract_notes(tab, onset, params)

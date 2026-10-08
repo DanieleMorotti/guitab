@@ -10,16 +10,14 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from guitab.data import aug_path  # noqa: E402
+from guitab.data import cached_input  # noqa: E402
 from guitab.evaluation import chunk_text, load_chunks, score  # noqa: E402
 from guitab.fingering import refinger_text  # noqa: E402
 from guitab.inference import DEFAULT_PARAMS, extract_notes, load_model, predict  # noqa: E402
-from guitab.paths import CACHE  # noqa: E402
 
 
 def main():
@@ -37,8 +35,7 @@ def main():
     probs = {}
     for path in sorted({m[0] for m in meta}):
         name = Path(path).stem.removesuffix("_mic")
-        feat = np.load(aug_path(name, args.variant)) if args.variant else np.load(CACHE / f"{name}.npz")["feat"]
-        probs[path] = predict(model, feat, device)
+        probs[path] = predict(model, cached_input(name, args.variant, model.sharp_bins > 0), device)
 
     def run(params):
         notes = {p: extract_notes(*probs[p], params) for p in probs}

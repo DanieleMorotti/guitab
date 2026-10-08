@@ -17,6 +17,9 @@ Audio augmentation (E12): with --aug_copies k, each training track gets k phone/
 validation also scores the held-out degraded copies, and the best checkpoint maximises the mean of the
 clean and degraded selection scores. --init starts from another checkpoint's weights (fine-tuning).
 
+Time-sharp low band (E14): with --sharp, the input also carries the low CQT octaves computed with 4x shorter
+filters (guitab/audio.py); --init from a model without it starts the new input channels at zero.
+
 SynthTab (E13): with --synth_share > 0, that share of crops comes from the selected SynthTab songs
 (rendered fingerpicked acoustic guitars, exact string/fret labels, tab-loss weight 1). Validation reports
 SynthTab string/fret and pitch F1 (synth_validation) but the best checkpoint is still chosen on real audio.
@@ -40,11 +43,12 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.audio import N_BINS, SHARP_BINS  # noqa: E402
 from guitab.data import load_split  # noqa: E402
 from guitab.evaluation import evaluate_gaps, evaluate_guitarset, gaps_ref, ref_notes  # noqa: E402
 from guitab.guitar import N_CLASSES, N_FRETS  # noqa: E402
 from guitab.guitarset import jams_path  # noqa: E402
-from guitab.model import TabModel, count_params, pitch_targets  # noqa: E402
+from guitab.model import TabModel, count_params, pitch_targets, widen_input  # noqa: E402
 
 
 def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0):
@@ -56,10 +60,12 @@ def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0)
         tr = tracks[rng.choices(range(len(tracks)), weights)[0]]
         n = len(tr["feat"])
         s = rng.randint(0, max(n - length, 0))
-        feat = tr["feat"]
+        x = np.asarray(tr["feat"][s:s + length], dtype=np.float32)
         if aug_share and tr.get("aug") and rng.random() < aug_share:
-            feat = tr["aug"][rng.randrange(len(tr["aug"]))]
-        x = np.asarray(feat[s:s + length], dtype=np.float32)
+            k = rng.randrange(len(tr["aug"]))
+            x = np.asarray(tr["aug"][k][s:s + length], dtype=np.float32)
+            if "aug_sharp" in tr:
+                x = np.concatenate([x, np.asarray(tr["aug_sharp"][k][s:s + length], dtype=np.float32)], 1)
         tab = tr["tab"][s:s + length].astype(np.int64)
         on = tr["onset"][s:s + length].astype(np.float32)
         unk = tr["unk"][s:s + length].astype(np.float32)
@@ -71,13 +77,16 @@ def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0)
             unk = np.pad(unk, (0, pad))
         if augment:
             k = rng.choice([0, 0, 1, 2])
-            if k:
-                x = np.concatenate([np.zeros((length, 3 * k), np.float32), x[:, :-3 * k]], axis=1)
+            if k:  # pitch roll, separately per band (CQT, then the sharp low band if present)
+                bands = [x[:, :N_BINS], x[:, N_BINS:]] if x.shape[1] > N_BINS else [x]
+                x = np.concatenate([np.concatenate([np.zeros((length, 3 * k), np.float32), b[:, :-3 * k]], axis=1)
+                                    for b in bands], axis=1)
                 fretted = tab > 0
                 tab = np.where(fretted, tab + k, tab)
                 tab = np.where(tab > N_FRETS, -100, tab)
             x = x + rng.uniform(-0.15, 0.05)  # level
-            x = x + rng.uniform(-0.1, 0.1) * np.linspace(-1, 1, x.shape[1], dtype=np.float32)  # tilt
+            tilt = np.linspace(-1, 1, N_BINS, dtype=np.float32)
+            x = x + rng.uniform(-0.1, 0.1) * np.concatenate([tilt, tilt[:x.shape[1] - N_BINS]])  # tilt (same per frequency)
             if rng.random() < 0.5:  # noise floor
                 floor = rng.uniform(0.05, 0.35)
                 x = np.maximum(x, floor + 0.03 * np.random.randn(*x.shape).astype(np.float32))
@@ -137,7 +146,9 @@ def main():
     parser.add_argument("--aug_share", type=float, default=0.0, help="probability a crop uses an augmented copy")
     parser.add_argument("--eval_degraded", action="store_true", help="also validate on the degraded copies")
     parser.add_argument("--synth_share", type=float, default=0.0, help="probability a crop comes from SynthTab")
+    parser.add_argument("--sharp", action="store_true", help="add the time-sharp low band to the input (E14)")
     args = parser.parse_args()
+    sharp_bins = SHARP_BINS if args.sharp else 0
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     out = Path(args.out)
@@ -145,16 +156,16 @@ def main():
     rng = random.Random(0)
     torch.manual_seed(0)
 
-    train = load_split("train", aug_copies=args.aug_copies)
-    val = load_split("validation", include_shift=False)
+    train = load_split("train", aug_copies=args.aug_copies, sharp=args.sharp)
+    val = load_split("validation", include_shift=False, sharp=args.sharp)
     ref_cache = {tr["name"]: ref_notes(jams_path(tr["name"])) for tr in val}
     weights = [len(t["feat"]) for t in train]
     pools = [(1.0 - args.gaps_share - args.synth_share, train, weights)]
     print(f"GuitarSet train tracks {len(train)} ({sum(weights) / 86.13 / 3600:.1f} h), val tracks {len(val)}", flush=True)
     gaps_val, gaps_ref_cache = [], {}
     if args.gaps_share > 0:
-        gtrain = load_split("gaps_train", aug_copies=args.aug_copies)
-        gaps_val = load_split("gaps_validation")
+        gtrain = load_split("gaps_train", aug_copies=args.aug_copies, sharp=args.sharp)
+        gaps_val = load_split("gaps_validation", sharp=args.sharp)
         gaps_ref_cache = {tr["name"]: gaps_ref(tr["labels"]) for tr in gaps_val}
         gw = [len(t["feat"]) for t in gtrain]
         pools.append((args.gaps_share, gtrain, gw))
@@ -163,20 +174,21 @@ def main():
     tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight, "synth": 1.0}
     synth_val, synth_ref_cache = [], {}
     if args.synth_share > 0:
-        strain = load_split("synth_train", aug_copies=args.aug_copies)
-        synth_val = load_split("synth_validation")
+        strain = load_split("synth_train", aug_copies=args.aug_copies, sharp=args.sharp)
+        synth_val = load_split("synth_validation", sharp=args.sharp)
         synth_ref_cache = {tr["name"]: gaps_ref(tr["labels"]) for tr in synth_val}
         sw = [len(t["feat"]) for t in strain]
         pools.append((args.synth_share, strain, sw))
         print(f"SynthTab train songs {len(strain)} ({sum(sw) / 86.13 / 3600:.1f} h), val songs {len(synth_val)}, "
               f"share {args.synth_share}", flush=True)
     if args.eval_degraded:
-        val_deg = load_split("validation", include_shift=False, variant="deg")
-        gaps_val_deg = load_split("gaps_validation", variant="deg") if gaps_val else []
+        val_deg = load_split("validation", include_shift=False, variant="deg", sharp=args.sharp)
+        gaps_val_deg = load_split("gaps_validation", variant="deg", sharp=args.sharp) if gaps_val else []
 
-    model = TabModel(args.size)
+    model = TabModel(args.size, sharp_bins=sharp_bins)
     if args.init:
-        model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=False)["model"])
+        ck = torch.load(args.init, map_location="cpu", weights_only=False)
+        model.load_state_dict(widen_input(ck["model"], model) if sharp_bins and not ck.get("sharp_bins") else ck["model"])
         print(f"initialised from {args.init}", flush=True)
     model = model.to(device)
     print(f"model {args.size}: {count_params(model) / 1e6:.1f}M params", flush=True)
@@ -198,7 +210,8 @@ def main():
         print(f"resumed at step {step}, best {best:.4f}", flush=True)
 
     def save(name):
-        torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "step": step, "best": best, "size": args.size},
+        torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "step": step, "best": best, "size": args.size,
+                    "sharp_bins": sharp_bins},
                    out / name)
 
     log = open(out / "log.jsonl", "a")

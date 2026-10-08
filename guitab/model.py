@@ -1,8 +1,9 @@
 """CQT frame/onset guitar tab model.
 
-input  log-CQT [B, T, 288] (36 bins/oct from E1)
+input  log-CQT [B, T, 288] (36 bins/oct from E1), or [B, T, 288 + 180] with the time-sharp low band (sharp_bins)
   -> harmonic stack: 6 channels (h = 0.5, 1, 2, 3, 4, 5) aligned on the fundamental, 144 bins
-     (48 semitones from E2), so a pitch's partials line up vertically for the convolutions
+     (48 semitones from E2), so a pitch's partials line up vertically for the convolutions;
+     with sharp_bins, 6 more channels: the same stack of the sharp band (zero above it)
   -> 2D CNN (time resolution kept, frequency pooled 144 -> 12)
   -> transformer encoder over time (context for fingering, sustains, chords)
   -> heads per frame:
@@ -34,15 +35,16 @@ def conv_block(cin, cout):
 
 
 class TabModel(nn.Module):
-    def __init__(self, size="mid", n_classes=21, dropout=0.1, max_len=4096):
+    def __init__(self, size="mid", n_classes=21, dropout=0.1, max_len=4096, sharp_bins=0):
         super().__init__()
         cfg = SIZES[size]
         c1, c2, c3 = cfg["chans"]
         d = cfg["d_model"]
         self.size = size
+        self.sharp_bins = sharp_bins
         self.shifts = [int(round(36 * math.log2(h))) for h in HARMONICS]
         self.cnn = nn.Sequential(
-            conv_block(len(HARMONICS), c1), conv_block(c1, c1), nn.MaxPool2d((1, 3)),  # 144 -> 48 (semitones)
+            conv_block(len(HARMONICS) * (2 if sharp_bins else 1), c1), conv_block(c1, c1), nn.MaxPool2d((1, 3)),  # 144 -> 48 (semitones)
             conv_block(c1, c2), conv_block(c2, c2), nn.MaxPool2d((1, 2)),  # -> 24
             conv_block(c2, c3), conv_block(c3, c3), nn.MaxPool2d((1, 2)),  # -> 12
             nn.Dropout(dropout),
@@ -65,7 +67,12 @@ class TabModel(nn.Module):
 
     def forward(self, x):
         b, t, _ = x.shape
-        h = self.cnn(self.harmonic_stack(x))  # [B, C, T, 12]
+        if self.sharp_bins:
+            n = x.shape[-1] - self.sharp_bins
+            stack = torch.cat([self.harmonic_stack(x[..., :n]), self.harmonic_stack(x[..., n:])], dim=1)
+        else:
+            stack = self.harmonic_stack(x)
+        h = self.cnn(stack)  # [B, C, T, 12]
         h = h.permute(0, 2, 1, 3).reshape(b, t, -1)
         h = self.proj(h) + self.pos[:, :t]
         h = self.norm(self.encoder(h))
@@ -74,6 +81,15 @@ class TabModel(nn.Module):
             "onset": self.onset_head(h),
             "pitch": self.pitch_head(h),
         }
+
+
+def widen_input(state, model):
+    """State dict of a model without the sharp band -> one for `model` (with it): the new input channels of the
+    first convolution start at zero, so the widened model computes exactly the same function at step 0."""
+    key = "cnn.0.0.weight"
+    w = torch.zeros_like(model.state_dict()[key])
+    w[:, :state[key].shape[1]] = state[key]
+    return {**state, key: w}
 
 
 def pitch_targets(tab):

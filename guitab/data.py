@@ -10,7 +10,8 @@ Splits: train / validation / test (GuitarSet players 00-03 / 04 / 05),
 gaps_train / gaps_validation / gaps_test, synth_train / synth_validation.
 Augmented audio (guitab/augment.py, scripts/build_aug_cache.py) only changes the features: AUG_CACHE holds
 <name>__aug<k>.npy (training copies) and <name>__deg.npy (held-out degraded test copies), with the labels
-of the original track.
+of the original track. With sharp=True, the time-sharp low band (guitab/audio.py, SHARP_CACHE/<name>__<variant>.npy,
+variant "clean" / "aug<k>" / "deg") is appended to every feature (model input [T, 288 + 180]).
 """
 
 import csv
@@ -23,7 +24,7 @@ from .audio import FPS, compute_cqt, load_audio
 from .gaps import GAPS_SPLITS, audio_path, label_path, safe
 from .guitar import N_FRETS, STRINGS
 from .guitarset import jams_path, string_notes
-from .paths import AUG_CACHE, CACHE, DATA, GAPS, resolve
+from .paths import AUG_CACHE, CACHE, DATA, GAPS, SHARP_CACHE, resolve
 from . import synthtab
 
 
@@ -125,9 +126,21 @@ def aug_path(name, variant):
     return AUG_CACHE / f"{name}__{variant}.npy"
 
 
-def load_split(split, include_shift=True, aug_copies=0, variant=None):
-    """aug_copies: attach up to that many augmented feature copies per track as tr["aug"] (memory-mapped, existing ones);
-    variant "deg": replace the features with the degraded copy (robustness evaluation)."""
+def sharp_path(name, variant=None):
+    """Time-sharp low band of the clean features (variant None) or of an augmented / degraded copy."""
+    return SHARP_CACHE / f"{name}__{variant or 'clean'}.npy"
+
+
+def cached_input(name, variant=None, sharp=False):
+    """Cached model input of a track: clean or variant ("aug<k>" / "deg") CQT, plus the sharp low band if sharp."""
+    feat = np.load(aug_path(name, variant)) if variant else np.load(CACHE / f"{name}.npz")["feat"]
+    return np.concatenate([feat, np.load(sharp_path(name, variant))], 1) if sharp else feat
+
+
+def load_split(split, include_shift=True, aug_copies=0, variant=None, sharp=False):
+    """aug_copies: attach up to that many augmented feature copies per track as tr["aug"] (memory-mapped, existing ones;
+    with sharp, their sharp bands as tr["aug_sharp"]); variant "deg": replace the features with the degraded copy
+    (robustness evaluation); sharp: append the sharp low band to tr["feat"]."""
     items = [t for t in tracks() if t[4] == split and (include_shift or t[3] == 0)]
     data = []
     for name, audio, labels, shift, _ in items:
@@ -138,8 +151,12 @@ def load_split(split, include_shift=True, aug_copies=0, variant=None):
               "onset": onset, "unk": unk, "source": name.split("_")[0] if name.startswith(("gaps_", "synth_")) else "guitarset"}
         if variant:
             tr["feat"] = np.load(aug_path(name, variant))
+        if sharp:
+            tr["feat"] = np.concatenate([tr["feat"], np.load(sharp_path(name, variant))], 1)
         if aug_copies:
-            tr["aug"] = [np.load(aug_path(name, f"aug{k}"), mmap_mode="r") for k in range(aug_copies)
-                         if aug_path(name, f"aug{k}").exists()]
+            copies = [f"aug{k}" for k in range(aug_copies) if aug_path(name, f"aug{k}").exists()]
+            tr["aug"] = [np.load(aug_path(name, v), mmap_mode="r") for v in copies]
+            if sharp:
+                tr["aug_sharp"] = [np.load(sharp_path(name, v), mmap_mode="r") for v in copies]
         data.append(tr)
     return data
