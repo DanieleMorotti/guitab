@@ -708,7 +708,7 @@ The listening check decides whether the extra notes are the missing chord notes 
 clean audio), which a from-scratch run would inherit. Nothing here shows fine-tuning as the limit: E13 converged and its 5k–8k
 validation is flat. A corrected recipe should be tested first (next options in the summary to the user).
 
-### E14 — Time-sharp low band for bass attacks (`runs/tabmodel_mid_gaps_sharp`) — DONE, no gain, not adopted
+### E14 — Time-sharp low band for bass attacks (`runs/tabmodel_mid_gaps_sharp`) — NO GAIN, code removed
 
 **Motivation (user):** in fingerpicking, two notes struck together (thumb bass + finger) often lose the bass.
 The user proposed detecting bass and melody separately. Measured on E12, validation:
@@ -757,3 +757,5 @@ So separate output heads were not the target (the tab head is already per string
   They are also ~7 dB quieter. These are soft thumb strokes, attacks masked by ringing low strings, or (GuitarSet)
   notes the hexaphonic pickup labels but the microphone barely hears.
   The information is weak in the audio, not hidden by the representation, so a from-scratch run with the band is not expected to help.
+
+Code removed (reverts commit c429a77; recoverable from it); run, feature cache and demo deleted.

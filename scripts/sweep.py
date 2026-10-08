@@ -21,7 +21,6 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from guitab.data import cached_input  # noqa: E402
 from guitab.evaluation import chunk_text, load_chunks, match_f1, ref_notes  # noqa: E402
 from guitab.fingering import FINGERING_PRESETS, refinger_text  # noqa: E402
 from guitab.guitar import OPEN_PITCH, STRINGS  # noqa: E402
@@ -71,7 +70,7 @@ def main():
         for path in sorted({m[0] for m in meta}):
             name = Path(path).stem.removesuffix("_mic")
             z = np.load(CACHE / f"{name}.npz")
-            probs[path] = predict(model, cached_input(name, sharp=model.sharp_bins > 0), device)
+            probs[path] = predict(model, z["feat"], device)
             labels[path] = (name, z["tab"].astype(np.int64))
         splits[split] = (refs, meta, probs, labels)
         print(f"cached {split}", flush=True)

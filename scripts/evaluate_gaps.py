@@ -27,15 +27,12 @@ def main():
     parser.add_argument("--variant", default=None, help='"deg": score the held-out degraded copies (robustness)')
     args = parser.parse_args()
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    data = {False: load_split(args.split, variant=args.variant)}
-    refs = {tr["name"]: gaps_ref(tr["labels"]) for tr in data[False]}
-    print(f"{args.split}: {len(data[False])} pieces, {sum(len(r) for r in refs.values())} notes")
+    data = load_split(args.split, variant=args.variant)
+    refs = {tr["name"]: gaps_ref(tr["labels"]) for tr in data}
+    print(f"{args.split}: {len(data)} pieces, {sum(len(r) for r in refs.values())} notes")
     for ckpt in args.checkpoints:
         model = load_model(ckpt, device)
-        sharp = model.sharp_bins > 0
-        if sharp not in data:
-            data[sharp] = load_split(args.split, variant=args.variant, sharp=sharp)
-        pitch_f1, agree = evaluate_gaps(model, data[sharp], device, refs)
+        pitch_f1, agree = evaluate_gaps(model, data, device, refs)
         print(f"{ckpt}: pitch F1 {pitch_f1:.4f}, string agreement {agree:.4f}", flush=True)
         del model
         torch.mps.empty_cache()

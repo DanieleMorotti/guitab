@@ -7,7 +7,6 @@ DATA = ROOT / "data"
 RUNS = ROOT / "runs"
 CACHE = DATA / "tabmodel_cache"           # CQT features + frame labels (scripts/build_cache.py)
 AUG_CACHE = DATA / "tabmodel_cache_aug"   # CQT of augmented / degraded audio (scripts/build_aug_cache.py)
-SHARP_CACHE = DATA / "tabmodel_cache_sharp"  # time-sharp low band of every cached feature (scripts/build_aug_cache.py --sharp)
 GUITARSET = DATA / "guitarset"            # annotation/ (JAMS), audio_mic/
 GUITARSET_SHIFT = DATA / "guitarset_shift"
 GAPS = DATA / "gaps"
