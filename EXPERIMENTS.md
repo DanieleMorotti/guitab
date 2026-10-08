@@ -759,3 +759,24 @@ So separate output heads were not the target (the tab head is already per string
   The information is weak in the audio, not hidden by the representation, so a from-scratch run with the band is not expected to help.
 
 Code removed (reverts commit c429a77; recoverable from it); run, feature cache and demo deleted.
+
+### D2 — Decoding for missed bass notes (beat prior, weak attacks) — 2026-10-08, not adopted (no code kept)
+
+What E12 outputs at a missed bass note (string 4–6, validation):
+
+| At the missed bass note | GuitarSet | GAPS |
+|---|---|---|
+| same pitch 50–200 ms off | .187 | .079 |
+| a note with another pitch (other / semitone / fifth / octave) | .277 | .264 |
+| same pitch already ringing (re-attack merged) | .082 | .059 |
+| nothing; frame > .5 but onset .3–.6 | .063 | .172 |
+| nothing; no frame or onset evidence | .197 | .147 |
+
+- The timing misses are GuitarSet strumming: 203 of 229 are in comp tracks, median +70 ms. Not the fingerstyle case.
+- **Beat prior** (Beat This! beats; add the best sub-threshold bass candidate on beats with no bass note): fails its premise.
+  Missed bass notes are on a beat less often than hit ones (GuitarSet .39 vs .47, GAPS .49 vs .59). Best setting:
+  pinch-bass miss −1 point, GAPS pitch +.001, GuitarSet −.001.
+- **Weak-attack rule** (an onset peak .3–.6 starts a note if the string then sounds for 3 frames and it is a new note on it):
+  GAPS pitch .8833 → .8868, pinch-bass miss .254 → .240; GuitarSet pitch −.001, string/fret −.0016. Small; to retest on the next model.
+- **E13 (SynthTab) already cuts bass misses more than any of these:** GuitarSet pinch-bass .296 → .252, all bass
+  .222 → .187; GAPS pinch-bass .254 → .238. Data with many pinches is the lever.
