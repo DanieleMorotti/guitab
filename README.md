@@ -6,12 +6,12 @@ MuseScore or any online gp5 player.
 The model reads a harmonic constant-Q spectrogram and predicts, at every frame (11.6 ms), the fret played on each of the
 6 strings plus note attacks. Notes are then snapped to the beats found by a beat tracker and written out as a tab.
 
-| Test set | Metric | Best model (`runs/tabmodel_mid_gaps_aug/best.pt`, E12) |
+| Test set | Metric | Best model (`runs/tabmodel_mid_close/best.pt`, E15) |
 |---|---|---|
-| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.827** |
-| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.860** |
-| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 (onset ±50 ms) | **0.815** |
-| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | **0.645 / 0.730** (E10: 0.609 / 0.701) |
+| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.832** |
+| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.862** |
+| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 / string agreement | **0.823 / 0.881** |
+| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | **0.660 / 0.743** (E12: 0.645 / 0.730) |
 
 The full history (including the original Whisper / Audio2Tab approach and a Basic Pitch baseline, both replaced),
 every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a new entry there for every experiment,
@@ -25,7 +25,7 @@ and commit each change separately.
 # 1) extract mono audio from a video or any audio file
 ffmpeg -i my_video.mov -ac 1 -ar 22050 out/my_video/my_video.wav
 
-# 2) transcribe (default checkpoint = best model, E12)
+# 2) transcribe (default checkpoint = best model, E15)
 .venv/bin/python scripts/transcribe.py --audio out/my_video/my_video.wav --out_dir out/my_video
 ```
 
@@ -137,6 +137,7 @@ Labels are shifted by each timbre's rendering latency (17–58 ms, `LATENCY_MS` 
 **Audio-augmented features** (`guitab/augment.py`; phone/room renderings, labels unchanged; about 15 min, 4.7 GB):
 ```bash
 .venv/bin/python scripts/build_aug_cache.py --copies 2 --workers 4   # 2 training copies per train / gaps_train track
+.venv/bin/python scripts/build_aug_cache.py --close --workers 4      # copy aug2: close-mic phone sound (E15), incl. synth_train
 .venv/bin/python scripts/build_aug_cache.py --degraded --workers 4   # held-out degraded copies of validation / test
 ```
 Score the degraded copies with `--variant deg` on `evaluate.py` and `evaluate_gaps.py` (robustness to phone / room audio).
@@ -151,6 +152,7 @@ nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &   # E10: Gui
 nohup scripts/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: GuitarSet only
 nohup scripts/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1 &   # E12: E10 fine-tuned with audio augmentation
 nohup scripts/train_mid_gaps_synth.sh > runs/tabmodel_mid_gaps_synth.log 2>&1 &   # E13: E12 + SynthTab fingerstyle subset
+nohup scripts/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15 (best): E12 + SynthTab (strings at 0.3) + close-mic copy
 grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
 - **Options:** both launch scripts call `scripts/train.py`.
@@ -197,7 +199,7 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 | `synthtab_fetch.py` | Selected SynthTab subset: label archive, selection, range download. |
 | `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
 | `build_aug_cache.py` | CQT of augmented (training) and degraded (robustness test) audio → `data/tabmodel_cache_aug/`. |
-| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh`, `train_mid_gaps_synth.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 / E13 runs). |
+| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh`, `train_mid_gaps_synth.sh`, `train_mid_close.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 / E13 / E15 runs). |
 | `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
 | `analyze_errors.py` | Error breakdown on validation and train subsets: miss / false-note categories, string accuracy, generalisation gap. |
 

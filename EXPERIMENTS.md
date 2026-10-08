@@ -591,7 +591,7 @@ GAPS validation, and every 3rd GuitarSet validation track):
   the lows. To avoid tuning training to our own held-out recipe, that run would need a new held-out recipe, for example
   real recorded impulse responses.
 
-### E13 — Adding a SynthTab fingerstyle subset (`runs/tabmodel_mid_gaps_synth`) — DONE, not adopted yet (mixed; awaiting the listening check)
+### E13 — Adding a SynthTab fingerstyle subset (`runs/tabmodel_mid_gaps_synth`) — DONE, superseded by E15
 **Goal:** improve dense fingerstyle chords. The user hears good melodies but weak multi-note passages on their recording,
 and A1 agrees: GAPS validation misses 40% of notes when 4+ notes sound together, vs ~8% for single notes.
 That needs audio with *correct* labels for dense polyphony. Self-training cannot provide it (the teacher is weakest exactly there),
@@ -780,3 +780,45 @@ What E12 outputs at a missed bass note (string 4–6, validation):
   GAPS pitch .8833 → .8868, pinch-bass miss .254 → .240; GuitarSet pitch −.001, string/fret −.0016. Small; to retest on the next model.
 - **E13 (SynthTab) already cuts bass misses more than any of these:** GuitarSet pinch-bass .296 → .252, all bass
   .222 → .187; GAPS pinch-bass .254 → .238. Data with many pinches is the lever.
+
+### E15 — SynthTab with down-weighted strings + close-mic phone augmentation (`runs/tabmodel_mid_close`) — DONE, new default model
+
+**Why:** the user's tab misses many bass notes. Findings that set up this run:
+- E13 (SynthTab) cut bass misses the most of anything tried (D2), but hurt GuitarSet strings and robustness.
+- The user's recording is not like the training audio. Its long-term spectrum vs GuitarSet: +10 dB at 70–100 Hz,
+  +4–5 dB at 100–200 Hz, −8 dB at 1–4 kHz (a phone close to the soundhole: boomy, dark).
+  Validation reshaped to that spectrum (per-track linear-phase EQ) makes E12 miss more pinch basses: GuitarSet .296 → .352.
+- Converting notes to the tab loses almost nothing (E15 on the video: 506 notes from the model, 502 in the tab).
+
+**Setup** (`scripts/train_mid_close.sh`, fine-tune of E12, 8k steps):
+- E13's recipe (GAPS .35, SynthTab .3), with SynthTab tab-loss weight 0.3 (`--synth_tab_weight`; pitches and attacks keep full weight).
+- A third augmented copy `aug2` for every training track, including SynthTab (`augment.close_chain`, `build_aug_cache.py --close`):
+  low shelf +3..+10 dB at 100–220 Hz, body peak +2..+8 dB at 80–150 Hz, high shelf −4..−12 dB from 1–3 kHz,
+  optional low-pass, light room, phone compression, noise, MP3. It matches the user's recording within ~3 dB per band.
+- `--aug_copies 3 --aug_share 0.6`. Best checkpoint: step 8000 (selection .7678 vs E12 .7630).
+
+**Test (once):**
+
+| Test set | Metric | E12 | E15 |
+|---|---|---|---|
+| GuitarSet player 05 chunks, clean | time pitch / string-fret F1 | .8595 / .8265 | **.8621 / .8319** |
+| GuitarSet test, degraded | time pitch / string-fret F1 | .7295 / .6448 | **.7433 / .6596** |
+| GAPS test, clean | pitch F1 / string agreement | .8147 / .8493 | **.8232 / .8805** |
+| GAPS test, degraded | pitch F1 / string agreement | .6740 / .7573 | **.6810 / .7594** |
+
+**Bass, validation, original and reshaped to sound like the user's recording** (miss rates; lower is better):
+
+| Set | Audio | Model | pitch F1 | all bass | pinch bass | treble |
+|---|---|---|---|---|---|---|
+| GuitarSet | original | E12 / E13 / E15 | .834 / .834 / **.842** | .222 / **.187** / .195 | .296 / **.252** / .262 | .137 / .119 / .120 |
+| | video-like | E12 / E13 / E15 | .833 / .832 / **.838** | .260 / **.206** / .225 | .352 / **.287** / .318 | .185 / .142 / .146 |
+| GAPS | original | E12 / E13 / E15 | .883 / .886 / **.889** | .120 / .116 / **.115** | .254 / .238 / **.229** | .150 / .138 / .136 |
+| | video-like | E12 / E13 / E15 | .883 / **.888** / .887 | .136 / **.109** / .114 | .266 / **.200** / .214 | .148 / .120 / .128 |
+
+**Reading:**
+- **Adopted:** better than E12 on every test number, clean and degraded. `DEFAULT_CHECKPOINT` is now E15.
+- **Bass:** 3–5 points fewer pinch-bass misses than E12, on both sets and both tones. E13 is still slightly better on bass
+  but worse on strings and robustness. The fixes for E13's problems worked: GuitarSet string/fret and GAPS string agreement
+  both beat E12.
+- **The user's video:** 149 notes on strings 4–6 (E12: 144). Not the large change the user wants.
+  There is no ground truth for the user's playing, so how many bass notes are missing there is still unmeasured.
