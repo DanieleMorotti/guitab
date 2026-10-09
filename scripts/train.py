@@ -17,6 +17,9 @@ Audio augmentation (E12): with --aug_copies k, each training track gets k phone/
 validation also scores the held-out degraded copies, and the best checkpoint maximises the mean of the
 clean and degraded selection scores. --init starts from another checkpoint's weights (fine-tuning).
 
+Mixing (E16): with --mix_share, a crop gets a second random crop added 6-25 dB quieter (power sum of the features),
+with merged labels, so the model learns soft notes under loud ones (inner voices of fingerstyle chords).
+
 SynthTab (E13): with --synth_share > 0, that share of crops comes from the selected SynthTab songs
 (rendered fingerpicked acoustic guitars, exact pitches; tab-loss weight --synth_tab_weight, default 1, since its
 string choices are the tab writer's and probably not audible). Validation reports
@@ -48,28 +51,53 @@ from guitab.guitarset import jams_path  # noqa: E402
 from guitab.model import TabModel, count_params, pitch_targets  # noqa: E402
 
 
-def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0):
-    """pools: [(share, tracks, length weights)]; returns x, tab, onset, unk, per-sample tab weight."""
+def draw_crop(pools, shares, length, rng, tab_weights, aug_share):
+    """One random crop: x [length, F], tab, onset, unk (padded to length) and its tab-loss weight."""
+    _, tracks, weights = pools[rng.choices(range(len(pools)), shares)[0]]
+    tr = tracks[rng.choices(range(len(tracks)), weights)[0]]
+    n = len(tr["feat"])
+    s = rng.randint(0, max(n - length, 0))
+    feat = tr["feat"]
+    if aug_share and tr.get("aug") and rng.random() < aug_share:
+        feat = tr["aug"][rng.randrange(len(tr["aug"]))]
+    x = np.asarray(feat[s:s + length], dtype=np.float32)
+    tab = tr["tab"][s:s + length].astype(np.int64)
+    on = tr["onset"][s:s + length].astype(np.float32)
+    unk = tr["unk"][s:s + length].astype(np.float32)
+    if len(x) < length:
+        pad = length - len(x)
+        x = np.pad(x, ((0, pad), (0, 0)))
+        tab = np.pad(tab, ((0, pad), (0, 0)))
+        on = np.pad(on, ((0, pad), (0, 0)))
+        unk = np.pad(unk, (0, pad))
+    return x, tab, on, unk, tab_weights.get(tr["source"], 1.0)
+
+
+def mix_crops(a, b, gain_db):
+    """Crop b added gain_db (< 0) below crop a. Features are dB/80 + 1, so they are summed as power. Labels: a string
+    active in only one crop takes its fret; active in both -> tab ignored there and the pitch loss skipped (unk)."""
+    xa, ta, oa, ua, wa = a
+    xb, tb, ob, ub, wb = b
+    power = 10 ** (8 * (xa - 1)) + 10 ** (8 * (xb - 1) + gain_db / 10)
+    x = np.clip(1 + np.log10(power) / 8, 0.0, 1.0).astype(np.float32)
+    both = (ta > 0) & (tb > 0)
+    tab = np.where(ta == 0, tb, ta)
+    tab = np.where(both | (ta == -100) | (tb == -100), -100, tab)
+    on = np.where((oa < 0) | (ob < 0), -1.0, np.maximum(oa, ob)).astype(np.float32)
+    unk = np.maximum(np.maximum(ua, ub), both.any(1).astype(np.float32))
+    return x, tab, on, unk, min(wa, wb)
+
+
+def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0, mix_share=0.0):
+    """pools: [(share, tracks, length weights)]; returns x, tab, onset, unk, per-sample tab weight.
+    mix_share: probability a crop gets a second crop added 6-25 dB quieter (soft notes under loud ones, E16)."""
     xs, tabs, onsets, unks, ws = [], [], [], [], []
     shares = [p[0] for p in pools]
     for _ in range(batch):
-        _, tracks, weights = pools[rng.choices(range(len(pools)), shares)[0]]
-        tr = tracks[rng.choices(range(len(tracks)), weights)[0]]
-        n = len(tr["feat"])
-        s = rng.randint(0, max(n - length, 0))
-        feat = tr["feat"]
-        if aug_share and tr.get("aug") and rng.random() < aug_share:
-            feat = tr["aug"][rng.randrange(len(tr["aug"]))]
-        x = np.asarray(feat[s:s + length], dtype=np.float32)
-        tab = tr["tab"][s:s + length].astype(np.int64)
-        on = tr["onset"][s:s + length].astype(np.float32)
-        unk = tr["unk"][s:s + length].astype(np.float32)
-        if len(x) < length:
-            pad = length - len(x)
-            x = np.pad(x, ((0, pad), (0, 0)))
-            tab = np.pad(tab, ((0, pad), (0, 0)))
-            on = np.pad(on, ((0, pad), (0, 0)))
-            unk = np.pad(unk, (0, pad))
+        crop = draw_crop(pools, shares, length, rng, tab_weights, aug_share)
+        if mix_share and rng.random() < mix_share:
+            crop = mix_crops(crop, draw_crop(pools, shares, length, rng, tab_weights, aug_share), -rng.uniform(6, 25))
+        x, tab, on, unk, weight = crop
         if augment:
             k = rng.choice([0, 0, 1, 2])
             if k:
@@ -91,7 +119,7 @@ def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0)
         tabs.append(tab)
         onsets.append(on)
         unks.append(unk)
-        ws.append(tab_weights.get(tr["source"], 1.0))
+        ws.append(weight)
     return (torch.from_numpy(np.stack(xs)), torch.from_numpy(np.stack(tabs)), torch.from_numpy(np.stack(onsets)),
             torch.from_numpy(np.stack(unks)), torch.tensor(ws, dtype=torch.float32))
 
@@ -139,6 +167,7 @@ def main():
     parser.add_argument("--eval_degraded", action="store_true", help="also validate on the degraded copies")
     parser.add_argument("--synth_share", type=float, default=0.0, help="probability a crop comes from SynthTab")
     parser.add_argument("--synth_tab_weight", type=float, default=1.0, help="tab-loss weight of SynthTab string labels")
+    parser.add_argument("--mix_share", type=float, default=0.0, help="probability a crop is mixed with a quieter second crop")
     args = parser.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -208,7 +237,7 @@ def main():
     t0, run = time.time(), {}
     start_step = step
     while step < args.steps:
-        x, tab, onset, unk, tab_w = sample_batch(pools, args.batch, args.length, True, rng, tab_weights, args.aug_share)
+        x, tab, onset, unk, tab_w = sample_batch(pools, args.batch, args.length, True, rng, tab_weights, args.aug_share, args.mix_share)
         x, tab, onset, unk, tab_w = x.to(device), tab.to(device), onset.to(device), unk.to(device), tab_w.to(device)
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
