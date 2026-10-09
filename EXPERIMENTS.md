@@ -881,3 +881,42 @@ is ≥ `reattack`; otherwise the two are merged (`inference.merge_reattacks`).
 - **Cost:** heavily reverberant audio (GuitarSet degraded, −.008), where real re-attacks have less confident onsets.
 - **Adopted** because it fixes the error the user sees. Demo `out/my_video/my_video_N_reattack.gp5`: the opening is now
   E4 E4 C4 | C3+G3 ..., as in the tab (E15 without D3 wrote E4 four times).
+
+### E16 — Crop mixing: soft notes under loud ones (`runs/tabmodel_mid_mix`) — NO GAIN, code removed
+
+**Why:** on the user's song (aligned reference tab), E15 + D3 completes only 6% of the 47 chords of 3–4 notes struck together
+(note recall .46; 2-note groups: 55% complete). Missed chord notes are present in the audio but ~16 dB softer than found ones
+(median −30 vs −14 dB re track max), mostly inner voices (G string 25 of 84). Equalising the recording to the training
+spectrum at inference only moved 3+ note recall .46 → .51.
+
+**Setup:**
+- `--mix_share 0.35`: a crop gets a second random crop added 6–25 dB quieter, summed as power from the dB features.
+- Labels: tab ignored where both crops use the same string; onsets merged; pitch loss skipped on those frames.
+- Fine-tune of E15 with E15's recipe, 6k steps (`scripts/train_mid_mix.sh`). Selected checkpoint: step 3000 (selection .7571).
+
+**Results (E15 + D3 → E16 + D3):**
+
+| | E15 | E16 (step 3000) | E16 (step 6000) |
+|---|---|---|---|
+| song: 3+ note chords complete / note recall | .06 / .46 | .11 / .54 | .06 / .52 |
+| song: 2-note groups complete | .55 | .60 | .57 |
+| song: bass recall | .64 | .69 | .67 |
+| song: pitch F1 / tab F1 (±100 ms) | **.739 / .717** | .717 / .682 | .718 / .687 |
+| song: notes output (reference 507) | 467 | 534 | 518 |
+
+| Test (once, E16 step 3000) | Metric | E15 + D3 | E16 + D3 |
+|---|---|---|---|
+| GuitarSet clean | time pitch / string-fret F1 | **.8662 / .8360** | .8602 / .8270 |
+| GuitarSet degraded | time pitch / string-fret F1 | **.7349 / .6503** | .7229 / .6348 |
+| GAPS clean | pitch F1 | **.8268** | .8192 |
+| GAPS degraded | pitch F1 | **.6841** | .6746 |
+
+**Reading:**
+- **On the song:** more chord notes are found (3+ note recall +.08, bass +.05), but more false notes too, so net F1 drops.
+- **Validation:** clean scores were the best of any model (GuitarSet string/fret .8200 at 5k, GAPS pitch .8937 at 6k).
+- **Robustness:** degraded validation stayed 2–5 points under E15 and swung between checkpoints. A likely cause is mixing a clean
+  crop with a phone-processed one.
+- **Test:** worse than E15 everywhere. Not adopted; code removed (reverts 68a2ad4), run deleted.
+
+**Conclusion:** sensitivity to soft inner voices does not come from synthetic mixtures of unrelated crops. What is missing is
+real recordings of dense fingerstyle with exact labels.
