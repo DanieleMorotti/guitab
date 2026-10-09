@@ -6,12 +6,12 @@ MuseScore or any online gp5 player.
 The model reads a harmonic constant-Q spectrogram and predicts, at every frame (11.6 ms), the fret played on each of the
 6 strings plus note attacks. Notes are then snapped to the beats found by a beat tracker and written out as a tab.
 
-| Test set | Metric | Best model (`runs/tabmodel_mid_close/best.pt`, E15) |
+| Test set | Metric | Best model (`runs/tabmodel_mid_close/best.pt`, E15 + D3) |
 |---|---|---|
-| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.832** |
-| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.862** |
-| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 / string agreement | **0.823 / 0.881** |
-| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | **0.660 / 0.743** (E12: 0.645 / 0.730) |
+| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.836** |
+| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.866** |
+| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 / string agreement | **0.827 / 0.880** |
+| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | **0.650 / 0.735** (E12: 0.645 / 0.730) |
 
 The full history (including the original Whisper / Audio2Tab approach and a Basic Pitch baseline, both replaced),
 every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a new entry there for every experiment,

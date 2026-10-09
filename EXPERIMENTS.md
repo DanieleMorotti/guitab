@@ -822,3 +822,62 @@ What E12 outputs at a missed bass note (string 4–6, validation):
   both beat E12.
 - **The user's video:** 149 notes on strings 4–6 (E12: 144). Not the large change the user wants.
   There is no ground truth for the user's playing, so how many bass notes are missing there is still unmeasured.
+
+### User-song benchmark: `my_video` vs the reference tab — 2026-10-08
+
+The user learnt "Remember Me (Coco)" (Sungha Jung) from a published tab (43 measures, 2 voices).
+The tab was fetched as the tab's track JSON and aligned to the recording:
+- **Score to seconds:** with its tempo map.
+- **DTW:** between the score's pitch roll (activity + attacks, E2–D#6) and the mean pitch roll of E10/E12/E13/E15 on the recording.
+  A chroma-only DTW was too loose (±300 ms).
+- **Snap:** each note to the nearest model-free audio onset within 50 ms (461/522 snapped).
+- **Ending dropped:** the last two measures (the user ends differently). This leaves 507 reference notes, 171 on strings 4–6.
+- **Saved** as `data/my_video_reference.json` (not versioned).
+- **Caveats:** the user may deviate from the tab, and the alignment uses the models (averaged over four).
+
+**Models on the user's song (±100 ms, default extraction before D3):**
+
+| | E10 (H) | E12 (J) | E13 (K) | E15 (M) |
+|---|---|---|---|---|
+| pitch F1 | .710 | .711 | .704 | **.713** |
+| tab (string + fret) F1 | .682 | .678 | .677 | **.691** |
+| bass recall (strings 4–6) | .63 | .61 | **.67** | .64 |
+| pinch-bass recall | .51 | .49 | **.61** | .56 |
+
+**E15 errors on the song:**
+- **False notes (124):** 84 are re-triggers of a ringing note; the user saw these as "more notes than played", e.g. E4 E4 → E4 ×4 at the start.
+- **Missed bass (61):** mostly F2 (15) and F3 (12).
+  - 28% have the right pitch 100–300 ms off (rolled pinches or alignment).
+  - 28% have no model evidence; 20% are heard sustaining with no attack.
+  - Missed F2/F3 notes are as loud as hit ones but barely rise at the attack (+4.4 dB vs +15.9 dB; 26% under 1 dB).
+    Many are probably let ring rather than re-struck by the user.
+
+### D3 — Merge re-attacks that split a ringing note (`reattack` 0.75) — 2026-10-08, ADOPTED
+
+A note that starts exactly where the previous note on the same string and fret ends is kept only if its onset probability
+is ≥ `reattack`; otherwise the two are merged (`inference.merge_reattacks`).
+
+**Choosing the threshold:** chosen on validation (sum of four pitch F1 changes): 0.7 +.0078, **0.75 +.0102**, 0.8 +.0083.
+
+**E15, test once, without → with D3:**
+
+| Test set | time pitch / string-fret F1 |
+|---|---|
+| GuitarSet clean | .8621 / .8319 → **.8662 / .8360** |
+| GuitarSet degraded | **.7433 / .6596** → .7349 / .6503 |
+
+| Test set | pitch F1 / string agreement |
+|---|---|
+| GAPS clean | .8232 / .8805 → **.8268** / .8804 |
+| GAPS degraded | .6810 / .7594 → **.6841** / .7591 |
+
+| User's song (±100 ms) | before D3 | with D3 |
+|---|---|---|
+| pitch F1 | .713 | **.725** |
+| tab F1 | .691 | **.703** |
+| notes (fewer, almost all false) | 506 | 486 |
+| pinch-bass recall | .56 | .54 |
+
+- **Cost:** heavily reverberant audio (GuitarSet degraded, −.008), where real re-attacks have less confident onsets.
+- **Adopted** because it fixes the error the user sees. Demo `out/my_video/my_video_N_reattack.gp5`: the opening is now
+  E4 E4 C4 | C3+G3 ..., as in the tab (E15 without D3 wrote E4 four times).

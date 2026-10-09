@@ -8,7 +8,9 @@ Notes are extracted per string:
   - it ends when the string goes silent, at the next onset on that string, or when the frame
     fret changes for `legato` consecutive frames (hammer-on / pull-off / slide -> new note);
   - the same pitch started on two strings within `dedup` frames is one note played once: only the
-    note whose fret posterior (mean over its frames) is higher is kept (0 = off).
+    note whose fret posterior (mean over its frames) is higher is kept (0 = off);
+  - a note that starts exactly where the previous note on the same string and fret ends (an onset peak that split a
+    ringing note) is a real re-attack only if its onset probability >= `reattack`; otherwise the two are merged (0 = off).
 """
 
 import numpy as np
@@ -19,7 +21,8 @@ from .guitar import OPEN_PITCH, STRINGS
 from .model import TabModel
 
 # tuned on GuitarSet validation (player 04) with scripts/evaluate.py --tune
-DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3, "dedup": 4}
+DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3, "dedup": 4,
+                  "reattack": 0.75}
 
 
 def load_model(checkpoint, device):
@@ -99,7 +102,24 @@ def extract_notes(tab, onset, params=None):
         notes = drop_duplicates(notes, p["dedup"] / FPS)
     for n in notes:
         del n["fret_conf"]
+    if p["reattack"]:
+        notes = merge_reattacks(notes, onset, p["reattack"])
     return notes
+
+
+def merge_reattacks(notes, onset, thr):
+    """Merge a note into the previous note on the same string and fret when it starts where that note ends and its
+    onset probability is below thr (the onset head split one ringing note in two)."""
+    out, last = [], {}
+    for n in sorted(notes, key=lambda n: n["onset"]):
+        prev = last.get(n["string"])
+        t, col = int(round(n["onset"] * FPS)), STRINGS.index(n["string"])
+        if prev is not None and prev["fret"] == n["fret"] and abs(prev["offset"] - n["onset"]) <= 1.5 / FPS and onset[t, col] < thr:
+            prev["offset"] = n["offset"]
+            continue
+        out.append(n)
+        last[n["string"]] = n
+    return sorted(out, key=lambda n: (n["onset"], n["string"]))
 
 
 def drop_duplicates(notes, window):
