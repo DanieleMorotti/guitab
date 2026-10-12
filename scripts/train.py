@@ -131,6 +131,7 @@ def main():
     parser.add_argument("--warmup", type=int, default=1000)
     parser.add_argument("--eval_every", type=int, default=1000)
     parser.add_argument("--bf16", action="store_true")
+    parser.add_argument("--accum", type=int, default=1, help="split each batch into this many chunks (gradient accumulation)")
     parser.add_argument("--log_every", type=int, default=100)
     parser.add_argument("--stop_at", default=None, help="HH:MM local time: save and exit at the first eval after it")
     parser.add_argument("--resume", action="store_true")
@@ -227,11 +228,21 @@ def main():
         x, tab, onset, unk, tab_w = x.to(device), tab.to(device), onset.to(device), unk.to(device), tab_w.to(device)
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
-        with torch.autocast("mps", dtype=torch.bfloat16, enabled=args.bf16):
-            pred = model(x)
-        loss, parts = loss_fn(pred, tab, onset, unk, tab_w)
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        if args.accum == 1:
+            with torch.autocast("mps", dtype=torch.bfloat16, enabled=args.bf16):
+                pred = model(x)
+            loss, parts = loss_fn(pred, tab, onset, unk, tab_w)
+            loss.backward()
+        else:  # same batch, forward/backward in args.accum chunks (lower peak memory), gradients averaged
+            parts = {}
+            for xc, tc, oc, uc, wc in zip(*(v.chunk(args.accum) for v in (x, tab, onset, unk, tab_w))):
+                with torch.autocast("mps", dtype=torch.bfloat16, enabled=args.bf16):
+                    pred = model(xc)
+                loss, p = loss_fn(pred, tc, oc, uc, wc)
+                (loss / args.accum).backward()
+                for k, v in p.items():
+                    parts[k] = parts.get(k, 0.0) + v / args.accum
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         step += 1

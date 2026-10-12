@@ -1036,7 +1036,7 @@ Attack enhancement: within ±.01 of none everywhere.
   their 3+ chord completeness (.29 → .29). The user's 3+ chord gap (.06) comes from the playing (soft or un-restruck inner
   notes) or from phone processing the chain does not model (automatic gain, noise suppression).
 
-### A1 — Tab language model + joint decoding (`runs/tablm`, not versioned) — 2026-10-12, works, not yet integrated
+### A1 — Tab language model + joint decoding (`runs/tablm`, not versioned) — 2026-10-12, ADOPTED as opt-in `--music_lm`
 
 **Idea:** speech-recognition-style fusion. The acoustic model (E15) scores candidate notes; a small tab language model,
 trained on symbolic tabs only, scores how plausible each chord is after the previous ones. Beam search picks the sequence.
@@ -1079,4 +1079,24 @@ trained on symbolic tabs only, scores how plausible each chord is after the prev
 - The LM decoder recovers nearly every chord note the acoustic model gives any evidence for.
 - On the user's recording ~42% of chord notes have no onset evidence on their string. That part needs better acoustic
   evidence (real labelled phone recordings, e.g. a hexaphonic pickup), not a better prior.
-- Chords are more complete on every set; overall F1 moves ±.01. Not integrated yet; awaiting the user's decision.
+- Chords are more complete on every set; overall F1 moves ±.01.
+- **Integrated as an option, not the default** (user's decision):
+  - `transcribe.py --music_lm [--music_lm_weight .3 --music_lm_bonus 1.0]`, code in `guitab/tablm.py`;
+  - `scripts/train_tablm.py corpus|train` rebuilds the corpus (byte-identical) and the model;
+  - `evaluate_song.py --music_lm` reproduces the numbers above (.745 / .719);
+  - default output unchanged (my_video tokens identical);
+  - demo: `out/my_video/my_video_Q_music_lm.gp5`.
+
+### E18 — Large model from scratch on all data (`runs/tabmodel_large_all`) — 2026-10-12, RUNNING
+
+**Setup** (`scripts/train_large_all.sh`):
+- **Model:** `large` preset, 66.1M parameters (mid: 23.8M); same CQT input and heads.
+- **Data:** from scratch, all data mixed per crop: GuitarSet .25 (+ pitch-shifted copies), GAPS .3 (strings .5),
+  SynthTab .2 (strings .3), custom-dataset .25 (strings .5).
+- **Augmentation:** 3 augmented copies (phone/room ×2, close-mic) on 60% of crops.
+- **Validation:** clean + degraded, selection as before.
+- **Schedule:** 30k steps, lr 3e-4, warmup 1000, cosine.
+- **Memory:** batch 16 does not fit in 9.8 GB, nor in 15 GB with fp32 or bf16. New `--accum 2` runs each batch as two chunks
+  (same update, half the peak memory); memory cap .53 (15 GB). 2.4 s/step, ~20 h of training plus evaluations, over several sessions.
+- **Why one mixed run rather than pretrain → fine-tune:** mixing sources per crop worked better than sequential stages (E13, E17).
+  A single fixed schedule is also simpler to stop and resume.
