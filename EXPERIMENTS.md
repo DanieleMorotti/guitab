@@ -920,3 +920,55 @@ spectrum at inference only moved 3+ note recall .46 → .51.
 
 **Conclusion:** sensitivity to soft inner voices does not come from synthetic mixtures of unrelated crops. What is missing is
 real recordings of dense fingerstyle with exact labels.
+
+### E17 — Real fingerstyle recordings labelled from reference tabs (`runs/tabmodel_mid_custom`) — DONE, not adopted (candidate)
+
+**Data** (`scripts/custom_fetch.py`, `guitab/custom_data.py`; personal-use research data, audio and labels not versioned):
+- **Selected:** 60 reference tabs (50 by Sungha Jung; single acoustic guitar, standard tuning, a synced main video,
+  ≥ 20% of attacks in chords). "Remember Me" (the user's benchmark song) excluded. 56 recordings downloaded (yt-dlp).
+- **Labels:** pitches and strings from the tab, timed as follows.
+  - Coarse: the dataset's measure sync, linear inside a measure.
+  - Refined: DTW against the mean pitch roll of E10/E12/E13/E15, keeping the best of banded ±0.5 s / global offset / free.
+    Many syncs are 5–15 s off (video intros); free DTW recovers them.
+  - Snapped: each onset moved to the nearest audio onset within 50 ms.
+  - Label check on Sungha Jung's own "Remember Me" recording (E15 pitch F1, ±100 ms): .45 coarse → .68 refined.
+- **Kept:** songs whose labels agree with E15 at pitch F1 ≥ .5 (±100 ms): 47 of 56 (2.67 h; 42 ss_train, 5 ss_validation).
+  Dropped: 2 recordings a semitone off the tab, 1 unalignable, 6 others.
+- `scripts/evaluate_song.py`: the user-song benchmark as a script.
+
+**Training:** fine-tune of E15, 6k steps (`scripts/train_mid_custom.sh`).
+- Shares: custom-dataset .3 (string labels at weight .5), GAPS .3, SynthTab .2, GuitarSet .2.
+- 3 augmented copies per track.
+- Best checkpoint: step 6000 (selection .7683 vs E15 .7678).
+
+**Validation, custom-dataset held-out songs (±50 ms):**
+
+| | E12 | E15 | E17 |
+|---|---|---|---|
+| string/fret F1 | .527 | .528 | **.600** |
+| pitch F1 | .657 | .650 | .653 |
+
+**User's song (±100 ms):**
+
+| | E15 + D3 | E17 + D3 |
+|---|---|---|
+| pitch F1 / tab F1 | .739 / .717 | .739 / .717 |
+| 2-note groups complete (notes) | .55 (.73) | **.64 (.78)** |
+| 3+ note chords complete (notes) | .06 (.46) | .04 (.45) |
+| bass recall | .64 | .64 |
+
+**Test (once):**
+
+| Test set | Metric | E15 + D3 | E17 + D3 |
+|---|---|---|---|
+| GuitarSet clean | time pitch / string-fret F1 | **.8662** / .8360 | .8647 / **.8365** |
+| GuitarSet degraded | time pitch / string-fret F1 | .7349 / .6503 | **.7406 / .6632** |
+| GAPS clean | pitch F1 / string agreement | **.8268** / .8804 | .8156 / .8804 |
+| GAPS degraded | pitch F1 / string agreement | **.6841 / .7591** | .6813 / .7552 |
+
+**Reading:**
+- **Strings:** real fingerstyle data clearly improves strings on unseen fingerstyle recordings (+7 points).
+- **2-note groups** on the user's song: +9 points complete.
+- **Chords of 3+ notes:** not helped (still ~5% complete). 2.7 h is little next to GuitarSet / GAPS / SynthTab (~30 h).
+- **Not adopted:** GAPS clean test pitch −.011 fails the adoption rule. E15 stays the default; E17 is kept as a candidate
+  (demo `out/my_video/my_video_P_custom.gp5`) for the user's listening check.
