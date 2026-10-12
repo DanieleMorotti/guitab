@@ -17,6 +17,10 @@ Audio augmentation (E12): with --aug_copies k, each training track gets k phone/
 validation also scores the held-out degraded copies, and the best checkpoint maximises the mean of the
 clean and degraded selection scores. --init starts from another checkpoint's weights (fine-tuning).
 
+custom-dataset (E17): with --ss_share > 0, that share of crops comes from the custom dataset (real fingerstyle recordings
+labelled with their tab, aligned; string labels at --ss_tab_weight). Validation reports custom-dataset string/fret and pitch F1
+(ss_validation); the best checkpoint is still chosen on GuitarSet + GAPS.
+
 SynthTab (E13): with --synth_share > 0, that share of crops comes from the selected SynthTab songs
 (rendered fingerpicked acoustic guitars, exact pitches; tab-loss weight --synth_tab_weight, default 1, since its
 string choices are the tab writer's and probably not audible). Validation reports
@@ -139,6 +143,8 @@ def main():
     parser.add_argument("--eval_degraded", action="store_true", help="also validate on the degraded copies")
     parser.add_argument("--synth_share", type=float, default=0.0, help="probability a crop comes from SynthTab")
     parser.add_argument("--synth_tab_weight", type=float, default=1.0, help="tab-loss weight of SynthTab string labels")
+    parser.add_argument("--ss_share", type=float, default=0.0, help="probability a crop comes from the custom dataset")
+    parser.add_argument("--ss_tab_weight", type=float, default=1.0, help="tab-loss weight of custom-dataset string labels")
     args = parser.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -151,7 +157,7 @@ def main():
     val = load_split("validation", include_shift=False)
     ref_cache = {tr["name"]: ref_notes(jams_path(tr["name"])) for tr in val}
     weights = [len(t["feat"]) for t in train]
-    pools = [(1.0 - args.gaps_share - args.synth_share, train, weights)]
+    pools = [(1.0 - args.gaps_share - args.synth_share - args.ss_share, train, weights)]
     print(f"GuitarSet train tracks {len(train)} ({sum(weights) / 86.13 / 3600:.1f} h), val tracks {len(val)}", flush=True)
     gaps_val, gaps_ref_cache = [], {}
     if args.gaps_share > 0:
@@ -162,7 +168,7 @@ def main():
         pools.append((args.gaps_share, gtrain, gw))
         print(f"GAPS train pieces {len(gtrain)} ({sum(gw) / 86.13 / 3600:.1f} h), val pieces {len(gaps_val)}, "
               f"share {args.gaps_share}", flush=True)
-    tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight, "synth": args.synth_tab_weight}
+    tab_weights = {"guitarset": 1.0, "gaps": args.gaps_tab_weight, "synth": args.synth_tab_weight, "ss": args.ss_tab_weight}
     synth_val, synth_ref_cache = [], {}
     if args.synth_share > 0:
         strain = load_split("synth_train", aug_copies=args.aug_copies)
@@ -172,6 +178,15 @@ def main():
         pools.append((args.synth_share, strain, sw))
         print(f"SynthTab train songs {len(strain)} ({sum(sw) / 86.13 / 3600:.1f} h), val songs {len(synth_val)}, "
               f"share {args.synth_share}", flush=True)
+    ss_val, ss_ref_cache = [], {}
+    if args.ss_share > 0:
+        sstrain = load_split("ss_train", aug_copies=args.aug_copies)
+        ss_val = load_split("ss_validation")
+        ss_ref_cache = {tr["name"]: gaps_ref(tr["labels"]) for tr in ss_val}
+        ssw = [len(t["feat"]) for t in sstrain]
+        pools.append((args.ss_share, sstrain, ssw))
+        print(f"custom-dataset train songs {len(sstrain)} ({sum(ssw) / 86.13 / 3600:.1f} h), val songs {len(ss_val)}, "
+              f"share {args.ss_share}", flush=True)
     if args.eval_degraded:
         val_deg = load_split("validation", include_shift=False, variant="deg")
         gaps_val_deg = load_split("gaps_validation", variant="deg") if gaps_val else []
@@ -252,6 +267,9 @@ def main():
             if synth_val:
                 ssf, spf = evaluate_guitarset(model, synth_val, device, synth_ref_cache)
                 rec.update(synth_sf=ssf, synth_pitch=spf)
+            if ss_val:
+                xsf, xpf = evaluate_guitarset(model, ss_val, device, ss_ref_cache)
+                rec.update(ss_sf=xsf, ss_pitch=xpf)
             if sel > best:
                 best = sel
                 save("best.pt")
@@ -263,6 +281,8 @@ def main():
                     extra += f", GAPS pitch F1 {rec['deg_gaps_pitch']:.4f}, GAPS string agreement {rec['deg_gaps_string_agree']:.4f}"
             if synth_val:
                 extra += f" | SynthTab val string/fret F1 {rec['synth_sf']:.4f}, pitch F1 {rec['synth_pitch']:.4f}"
+            if ss_val:
+                extra += f" | custom-dataset val string/fret F1 {rec['ss_sf']:.4f}, pitch F1 {rec['ss_pitch']:.4f}"
             print(f"EVAL step {step}: val string/fret F1 {sf:.4f}, pitch F1 {pf:.4f}{extra} (best {best:.4f})", flush=True)
             log.write(json.dumps(rec) + "\n")
             log.flush()

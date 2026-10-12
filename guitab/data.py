@@ -5,9 +5,10 @@ Labels per frame (11.6 ms) and string (column order STRINGS, low E .. high E):
   onset[t, s] 1 on the frame closest to a note attack (-1 = ignore)
   unk[t]      1 while a note whose string is unknown sounds (GAPS)
 Tracks: GuitarSet (data/guitarset.csv), its pitch-shifted copies (data/guitarset_shift.csv), the
-GAPS selection (gaps_selection) and the SynthTab subset (guitab/synthtab.py).
+GAPS selection (gaps_selection), the SynthTab subset (guitab/synthtab.py) and the custom dataset (guitab/custom_data.py:
+real recordings, tab labels; only songs whose labels passed the alignment check).
 Splits: train / validation / test (GuitarSet players 00-03 / 04 / 05),
-gaps_train / gaps_validation / gaps_test, synth_train / synth_validation.
+gaps_train / gaps_validation / gaps_test, synth_train / synth_validation, ss_train / ss_validation.
 Augmented audio (guitab/augment.py, scripts/build_aug_cache.py) only changes the features: AUG_CACHE holds
 <name>__aug<k>.npy (training copies) and <name>__deg.npy (held-out degraded test copies), with the labels
 of the original track.
@@ -24,7 +25,7 @@ from .gaps import GAPS_SPLITS, audio_path, label_path, safe
 from .guitar import N_FRETS, STRINGS
 from .guitarset import jams_path, string_notes
 from .paths import AUG_CACHE, CACHE, DATA, GAPS, resolve
-from . import synthtab
+from . import custom_data, synthtab
 
 
 def gaps_notes(label_path):
@@ -98,7 +99,11 @@ def tracks():
         out.append((row["sample_id"], str(resolve(row["audio_path"])), str(jams_path(base)), int(k), row["split"]))
     synth = [(f"synth_{r['sid']}", str(synthtab.audio_path(r["sid"])), str(synthtab.label_path(r["sid"])), 0, r["split"])
              for r in synthtab.selection() if synthtab.audio_path(r["sid"]).exists()]
-    return out + gaps_selection() + synth
+    summary = custom_data.CUSTOM_DATA / "labels_summary.csv"
+    ok = {r["songId"] for r in csv.DictReader(open(summary)) if r["status"] == "ok"} if summary.exists() else set()
+    ss = [(f"ss_{r['songId']}", str(custom_data.audio_path(r["songId"])), str(custom_data.label_path(r["songId"])), 0, r["split"])
+          for r in custom_data.selection() if r["songId"] in ok and custom_data.audio_path(r["songId"]).exists()]
+    return out + gaps_selection() + synth + ss
 
 
 def compute_track(item):
@@ -135,7 +140,7 @@ def load_split(split, include_shift=True, aug_copies=0, variant=None):
         onset = z["onset"].astype(np.int8)
         unk = z["unk"] if "unk" in z.files else np.zeros(len(z["feat"]), dtype=np.uint8)
         tr = {"name": name, "audio": audio, "labels": labels, "shift": shift, "feat": z["feat"], "tab": z["tab"],
-              "onset": onset, "unk": unk, "source": name.split("_")[0] if name.startswith(("gaps_", "synth_")) else "guitarset"}
+              "onset": onset, "unk": unk, "source": name.split("_")[0] if name.startswith(("gaps_", "synth_", "ss_")) else "guitarset"}
         if variant:
             tr["feat"] = np.load(aug_path(name, variant))
         if aug_copies:

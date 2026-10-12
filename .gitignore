@@ -15,3 +15,7 @@ out/
 __pycache__/
 *.pyc
 .DS_Store
+!data/custom/
+data/custom/*
+!data/custom/selection.csv
+!data/custom/labels_summary.csv

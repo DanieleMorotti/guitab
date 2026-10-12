@@ -1,6 +1,6 @@
 """Compute CQT features of augmented audio (guitab/augment.py) into data/tabmodel_cache_aug/.
 
-    python scripts/build_aug_cache.py --copies 2 --workers 4   # training copies: <name>__aug<k>.npy for train, gaps_train, synth_train
+    python scripts/build_aug_cache.py --copies 2 --workers 4   # training copies: <name>__aug<k>.npy for train, gaps_train, synth_train, ss_train
     python scripts/build_aug_cache.py --close --workers 4      # copy aug2 (E15): close-mic phone chain for the training splits
     python scripts/build_aug_cache.py --degraded --workers 4   # held-out degraded copies: <name>__deg.npy for the
                                                                 # validation / test splits (GuitarSet and GAPS)
@@ -22,7 +22,7 @@ from guitab.augment import close_chain, degrade, seed_for, train_chain  # noqa: 
 from guitab.data import aug_path, tracks  # noqa: E402
 from guitab.paths import AUG_CACHE  # noqa: E402
 
-TRAIN_SPLITS = ("train", "gaps_train", "synth_train")
+TRAIN_SPLITS = ("train", "gaps_train", "synth_train", "ss_train")
 EVAL_SPLITS = ("validation", "test", "gaps_validation", "gaps_test")
 CLOSE = "aug2"  # the close-mic phone copy (augment.close_chain)
 
