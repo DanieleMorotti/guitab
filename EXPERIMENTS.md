@@ -1000,3 +1000,38 @@ aligned labels, ±100 ms): single notes .83, 2-note groups .55, **3+ chords .29 
 The missed chord notes in the user's recording are ~16 dB softer than found ones and half have no visible attack (E16 analysis).
 - **Likely causes:** inner voices plucked very softly or not re-struck, and the close boomy phone placement (+10 dB at 70–100 Hz).
 - **Next:** a re-recording with the phone 30–50 cm away near the 12th fret would separate playing from recording.
+
+### D5 — Benchmark of free adjustments (tone EQ, attack enhancement, explaining-away) — 2026-10-12, none adopted (no code kept)
+
+**Benchmark** (E15 + D3, ±100 ms, aligned labels):
+- the 5 custom-dataset held-out recordings;
+- the same 5 through `augment.close_chain` (the user's phone-near-the-soundhole sound);
+- the user's song.
+
+**Adjustments:**
+- Tone EQ: linear-phase EQ of each recording's long-term spectrum toward the median of 130 training tracks (strength .5 / 1, ±15 dB).
+- Attack enhancement: + .5 × the HPSS percussive part.
+- D4 explaining-away. Alone and combined.
+
+| Set | Variant | pitch F1 | 2-note complete | 3+ complete (notes) | notes |
+|---|---|---|---|---|---|
+| custom-dataset | none | **.690** | .55 | .29 (.64) | 5170 |
+| | D4 | .670 | .59 | .33 (.66) | 5698 |
+| | EQ 1 | .684 | .55 | .36 (.67) | 5514 |
+| | EQ 1 + D4 | .666 | .59 | .39 (.70) | 6064 |
+| custom-dataset, close-mic | none | **.666** | .52 | .29 (.63) | 5272 |
+| | D4 | .648 | .58 | .32 (.66) | 5912 |
+| | EQ 1 | .629 | .57 | .38 (.68) | 6341 |
+| User's song | none | **.739** | .55 | .06 (.46) | 467 |
+| | D4 | **.739** | .69 | .13 (.52) | 524 |
+| | EQ .5 + D4 | .733 | .73 | .15 (.53) | 546 |
+| | EQ 1 + D4 | .716 | .72 | .17 (.52) | 566 |
+
+Attack enhancement: within ±.01 of none everywhere.
+
+**Reading:**
+- **A trade, not a gain.** Every adjustment raises chord recall and adds more false notes; overall pitch F1 is flat or worse. Nothing is adopted as default.
+  D4 could be an opt-in "fuller chords" mode.
+- **The phone sound is not the chord problem.** Simulating the user's phone placement on other recordings does not change
+  their 3+ chord completeness (.29 → .29). The user's 3+ chord gap (.06) comes from the playing (soft or un-restruck inner
+  notes) or from phone processing the chain does not model (automatic gain, noise suppression).
