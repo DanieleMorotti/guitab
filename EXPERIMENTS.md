@@ -1035,3 +1035,48 @@ Attack enhancement: within ±.01 of none everywhere.
 - **The phone sound is not the chord problem.** Simulating the user's phone placement on other recordings does not change
   their 3+ chord completeness (.29 → .29). The user's 3+ chord gap (.06) comes from the playing (soft or un-restruck inner
   notes) or from phone processing the chain does not model (automatic gain, noise suppression).
+
+### A1 — Tab language model + joint decoding (`runs/tablm`, not versioned) — 2026-10-12, works, not yet integrated
+
+**Idea:** speech-recognition-style fusion. The acoustic model (E15) scores candidate notes; a small tab language model,
+trained on symbolic tabs only, scores how plausible each chord is after the previous ones. Beam search picks the sequence.
+
+**Language model:**
+- Data: 12,737 acoustic / clean / jazz 6-string standard-tuning tracks from the DadaGP-derived SynthTab label archive
+  (60,633 tracks in all; distortion, overdrive and bass excluded). The user's song and the 5 custom-dataset held-out titles are excluded.
+- Tokens: notes of a chord (string, fret ≤ 19), low → high string, then end-of-chord. No rhythm. 16.9M training tokens.
+- Model: causal transformer, 4 layers, d 256, 3.3M parameters. 8k steps × 64 × 256 tokens, ~40 min on the laptop.
+- Held-out perplexity: 1.8 per token.
+
+**Decoder:**
+- Attack groups: per-string onset peaks ≥ τ 0.2, merged across strings within 4 frames.
+- Per string with a peak: no note, or one of its top-2 frets (fret posterior ≥ .1). At most 12 candidate chords per group, no duplicate pitches.
+- Score: acoustic log-probabilities + λ · LM log P(chord | history, last 120 tokens) + β · notes. Beam 4.
+- Notes without an onset peak (legato) pass through from the default extraction; then D3 re-attack merge.
+- Cost: ~10–20 s extra per song.
+
+**Tuning** (half of GAPS validation, a third of GuitarSet validation):
+- λ 0.3 is the useful range; λ ≥ 0.6 lets the LM override the audio (GAPS pitch F1 down to .60–.86).
+- The audio-only decoder (λ 0) is not better than the default; the gains come from the LM.
+- Chosen: λ 0.3, β 1.0, 4-frame grouping window, D3 0.75.
+
+**Evaluation** (default extraction → LM decoding):
+
+| Set (tolerance) | pitch F1 | 3+ chords complete (notes) | 2-note groups complete |
+|---|---|---|---|
+| User's song (±100 ms) | .739 → **.745** | .06 (.46) → **.11 (.48)** | .55 → **.59** |
+| custom-dataset held-out (±100 ms) | **.690** → .678 | .29 (.64) → **.39 (.68)** | .55 → .54 |
+| GAPS validation (±50 ms) | .892 → **.899** | .29 (.59) → **.38 (.64)** | .66 → **.70** |
+| GuitarSet validation (±50 ms) | **.851** → .844 | .68 (.87) → **.72 (.88)** | .60 → **.65** |
+
+β 1.25 gives slightly fuller chords (user's song 2-note .64, 3+ .13) at ~−.005 F1.
+
+**Ceiling:** share of notes in 3+ chords that are candidates at all (onset peak on the right string, fret in the top-k):
+- User's song: .48 (τ .2) to .58 (τ .05, top-3); the decoder finds .48.
+- custom-dataset held-out: .70 to .76; the decoder finds .68.
+
+**Reading:**
+- The LM decoder recovers nearly every chord note the acoustic model gives any evidence for.
+- On the user's recording ~42% of chord notes have no onset evidence on their string. That part needs better acoustic
+  evidence (real labelled phone recordings, e.g. a hexaphonic pickup), not a better prior.
+- Chords are more complete on every set; overall F1 moves ±.01. Not integrated yet; awaiting the user's decision.
