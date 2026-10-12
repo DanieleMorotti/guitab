@@ -138,8 +138,17 @@ def drop_duplicates(notes, window):
     return [n for n, k in zip(notes, keep) if k]
 
 
-def transcribe_file(checkpoint, audio_path, device, params=None):
+def transcribe_file(checkpoint, audio_path, device, params=None, music_lm=None):
+    """music_lm: None = default note extraction; a dict of decoding settings (guitab.tablm.DEFAULT_DECODING, optionally
+    with "path" to the LM checkpoint) = joint decoding with the tab language model (fuller chords, opt-in)."""
     model = load_model(checkpoint, device)
     feat = compute_cqt(load_audio(audio_path))
     tab, onset = predict(model, feat, device)
-    return extract_notes(tab, onset, params)
+    if music_lm is None:
+        return extract_notes(tab, onset, params)
+    from .paths import TABLM_CHECKPOINT
+    from .tablm import DEFAULT_DECODING, decode_with_lm, load_tablm
+
+    cfg = {**DEFAULT_DECODING, **music_lm}
+    lm = load_tablm(cfg.pop("path", TABLM_CHECKPOINT), device)
+    return decode_with_lm(tab, onset, lm, device, **cfg)

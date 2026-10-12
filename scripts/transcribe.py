@@ -6,6 +6,7 @@ The CQT frame/onset tab model (default checkpoint runs/tabmodel_mid_gaps/best.pt
 
 Usage:
     python scripts/transcribe.py --audio my_song.wav --out_dir out/my_song [--onset 0.4] [--fingering low]
+    python scripts/transcribe.py --audio my_song.wav --out_dir out/my_song --music_lm   # fuller chords (tab language model)
 """
 
 import argparse
@@ -45,6 +46,11 @@ def main():
     parser.add_argument("--params", default=None,
                         help='JSON note-extraction settings, e.g. the tuned ones of a checkpoint (see EXPERIMENTS.md); '
                              '--onset / --orphan are applied on top.')
+    parser.add_argument("--music_lm", action="store_true",
+                        help="decode jointly with the tab language model (runs/tablm/tablm.pt): fuller chords, ~10-20 s slower; "
+                             "ignores --onset / --orphan / --params (EXPERIMENTS.md, A1).")
+    parser.add_argument("--music_lm_weight", type=float, default=0.3, help="weight of the tab LM (0.3 tuned; >= 0.6 overrides the audio).")
+    parser.add_argument("--music_lm_bonus", type=float, default=1.0, help="per-note bonus with --music_lm (higher = fuller chords, more false notes).")
     parser.add_argument("--grid", type=int, default=240, help="Quantization grid in ticks (960 = quarter; 240 = 16th).")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--name", default=None, help="Output file stem (default: audio file stem).")
@@ -57,7 +63,8 @@ def main():
         params["onset"] = args.onset
     if args.orphan:
         params.update(orphan=True, frame=0.5)
-    notes = transcribe_file(args.checkpoint, audio_path, device, params)
+    music_lm = {"lam": args.music_lm_weight, "beta": args.music_lm_bonus} if args.music_lm else None
+    notes = transcribe_file(args.checkpoint, audio_path, device, params, music_lm)
     print(f"{len(notes)} notes")
     if args.tempo != "auto":
         grid = BeatGrid([], tempo=int(args.tempo))

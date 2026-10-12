@@ -41,6 +41,8 @@ The output is `out/my_video/my_video.gp5`, plus `my_video.tokens.txt` (the tab a
 | `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_mid_gaps/best.pt` (E10, no audio augmentation) or `runs/tabmodel_mid/best.pt` (E8, GuitarSet only). |
 | `--name X` | Output file stem. |
 | `--params JSON` | Note-extraction settings (keys of `DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`; `--onset` / `--orphan` apply on top. |
+| `--music_lm` | Fuller chords. Notes are decoded jointly with a small tab language model trained on ~12.7k symbolic tabs (`runs/tablm/tablm.pt`, `guitab/tablm.py`). Chords come out more complete (3–4 note chords +4 to +10 points on every benchmark set), overall F1 moves by about ±0.01, and a song takes 10–20 s longer. Ignores `--onset` / `--orphan` / `--params`. |
+| `--music_lm_weight 0.3` / `--music_lm_bonus 1.0` | Language-model weight (≥ 0.6 overrides the audio) and per-note bonus (higher = fuller chords, more false notes; 1.25 is a bit fuller). |
 
 Inference needs about 1–2 GB of GPU memory and takes under a minute for a 4-minute song on an M-series Mac.
 
@@ -153,11 +155,14 @@ nohup scripts/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: Guit
 nohup scripts/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1 &   # E12: E10 fine-tuned with audio augmentation
 nohup scripts/train_mid_gaps_synth.sh > runs/tabmodel_mid_gaps_synth.log 2>&1 &   # E13: E12 + SynthTab fingerstyle subset
 nohup scripts/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15 (best): E12 + SynthTab (strings at 0.3) + close-mic copy
+nohup scripts/train_mid_custom.sh > runs/tabmodel_mid_custom.log 2>&1 &   # E17: E15 + custom-dataset real recordings
+nohup scripts/train_large_all.sh > runs/tabmodel_large_all.log 2>&1 &   # E18: large model from scratch, all data (15 GB cap)
+.venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
 grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
 - **Options:** both launch scripts call `scripts/train.py`.
   - `--out` — output folder; use a new one per experiment.
-  - `--size mid|large` — about 24M / 50M parameters.
+  - `--size mid|large` — about 24M / 66M parameters (`large` needs `--accum 2` within a 15 GB memory cap).
   - `--steps`, `--batch`, `--lr`.
   - `--gaps_share` — the share of 5 s crops taken from GAPS.
   - `--gaps_tab_weight` — the loss weight of GAPS string labels.
@@ -199,8 +204,11 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 | `synthtab_fetch.py` | Selected SynthTab subset: label archive, selection, range download. |
 | `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
 | `build_aug_cache.py` | CQT of augmented (training) and degraded (robustness test) audio → `data/tabmodel_cache_aug/`. |
-| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh`, `train_mid_gaps_synth.sh`, `train_mid_close.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 / E13 / E15 runs). |
+| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh`, `train_mid_gaps_synth.sh`, `train_mid_close.sh`, `train_mid_custom.sh`, `train_large_all.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 / E13 / E15 / E17 / E18 runs). |
+| `custom_fetch.py` | custom fingerstyle dataset: search, select, download the synced recordings, align and label. |
+| `train_tablm.py` | Chord corpus from symbolic tabs and the tab language model for `transcribe.py --music_lm`. |
 | `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
+| `evaluate_song.py` | The user-song benchmark: checkpoints vs the aligned reference tab of `my_video` (chord completeness, bass, F1); `--music_lm`. |
 | `analyze_errors.py` | Error breakdown on validation and train subsets: miss / false-note categories, string accuracy, generalisation gap. |
 
 ---

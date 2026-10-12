@@ -42,6 +42,7 @@ def main():
     parser.add_argument("--checkpoints", nargs="+", required=True)
     parser.add_argument("--reference", default=str(DATA / "my_video_reference.json"))
     parser.add_argument("--audio", default=str(ROOT / "out" / "my_video" / "my_video.wav"))
+    parser.add_argument("--music_lm", action="store_true", help="decode with the tab language model (guitab/tablm.py)")
     args = parser.parse_args()
     ref = json.loads(Path(args.reference).read_text())
     end = max(r["onset"] for r in ref) + 0.5
@@ -51,7 +52,15 @@ def main():
     print(f"reference: {len(ref)} notes; groups: {sum(len(g) == 1 for g in groups)} single, {sum(len(g) == 2 for g in groups)} "
           f"of 2, {sum(len(g) >= 3 for g in groups)} of 3+")
     for ck in args.checkpoints:
-        est = [e for e in extract_notes(*predict(load_model(ck, device), feat, device)) if e["onset"] <= end]
+        tab, onset = predict(load_model(ck, device), feat, device)
+        if args.music_lm:
+            from guitab.paths import TABLM_CHECKPOINT
+            from guitab.tablm import DEFAULT_DECODING, decode_with_lm, load_tablm
+
+            notes = decode_with_lm(tab, onset, load_tablm(TABLM_CHECKPOINT, device), device, **DEFAULT_DECODING)
+        else:
+            notes = extract_notes(tab, onset)
+        est = [e for e in notes if e["onset"] <= end]
         hit = {j for j, _ in match(ref, est, ("pitch",), tol=TOL)}
         parts = []
         for name, sel in (("single", lambda g: len(g) == 1), ("2-note", lambda g: len(g) == 2), ("3+", lambda g: len(g) >= 3)):
