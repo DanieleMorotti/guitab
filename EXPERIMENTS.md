@@ -972,3 +972,31 @@ real recordings of dense fingerstyle with exact labels.
 - **Chords of 3+ notes:** not helped (still ~5% complete). 2.7 h is little next to GuitarSet / GAPS / SynthTab (~30 h).
 - **Not adopted:** GAPS clean test pitch −.011 fails the adoption rule. E15 stays the default; E17 is kept as a candidate
   (demo `out/my_video/my_video_P_custom.gp5`) for the user's listening check.
+
+### D4 — Self-calibrated explaining-away for missed chord notes — 2026-10-12, promising, not integrated (no code kept)
+
+**Idea:** learn the spectral fingerprint of each pitch on the user's own guitar / phone / room from the model's confident
+isolated notes in the same recording. Here 239 notes give 22 pitches directly; the others are shifted copies.
+- At each attack group the model found, fit those notes' fingerprints (NNLS) to the energy the attack adds (linear CQT,
+  frames +2..+8 minus −4..−1).
+- Then add up to K missing pitches whose fingerprint explains ≥ θ of the residual energy, playable on a string not used
+  by the group, where the model's fret posterior is ≥ ε.
+
+**User's song (E15 + D3, ±100 ms):**
+
+| setting | pitch F1 / tab F1 | 2-note groups complete (notes) | 3+ chords complete (notes) | notes added |
+|---|---|---|---|---|
+| none | .739 / .717 | .55 (.73) | .06 (.46) | — |
+| θ .1, ε .05, K 1 | .741 / .715 | .64 (.78) | .09 (.48) | 28 |
+| θ .05, ε .01, K 1 | .739 / .712 | **.69 (.81)** | **.13 (.52)** | 57 |
+| θ .05, ε 0, K 1 | .714 / .687 | .71 (.81) | .13 (.50) | 88 |
+
+K 2 changes nothing.
+
+**Chord completeness is mostly a property of the user's recording.** E15 on the custom-dataset held-out recordings (other players,
+aligned labels, ±100 ms): single notes .83, 2-note groups .55, **3+ chords .29 complete (notes .64)**. On the user's song:
+.89 / .55 / **.06 (.46)**.
+
+The missed chord notes in the user's recording are ~16 dB softer than found ones and half have no visible attack (E16 analysis).
+- **Likely causes:** inner voices plucked very softly or not re-struck, and the close boomy phone placement (+10 dB at 70–100 Hz).
+- **Next:** a re-recording with the phone 30–50 cm away near the 12th fret would separate playing from recording.
