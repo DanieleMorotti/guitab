@@ -1179,7 +1179,8 @@ while guitarists read them relative to the capo.
 - 0–39% of the predicted notes were below the capo (more with capo 5). Capo 5 songs gain the most:
   "Time in a Bottle" .476 → .794, "Married Life" .366 → .600, "Kamado Tanjiro" .417 → .585.
 - Few notes are dropped (at most 31 of 1929 on one song).
-- Demo (capo 5): `out/capo_demo/time_in_a_bottle_no_capo.gp5` vs `time_in_a_bottle_capo5.gp5`; the first 8 notes of the
+- Demo (capo 5): `out/capo_demo/time_in_a_bottle_no_capo.gp5` vs `time_in_a_bottle_capo5.gp5`, and the original tab
+  `time_in_a_bottle_ORIGINAL_tab.gp5` (new `custom_fetch.py export --song ID --out X.gp5`); the first 8 notes of the
   capo version match the reference tab exactly (string and relative fret).
 - Without `--capo`, the my_video tokens and .gp5 are byte-identical to before.
 - Not done: automatic capo detection (would need the capo guessed from the audio or the predictions).
