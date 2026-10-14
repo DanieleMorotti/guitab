@@ -38,7 +38,7 @@ The output is `out/my_video/my_video.gp5`, plus `my_video.tokens.txt` (the tab a
 | `--fingering low` | Re-fingers everything towards first position (Viterbi optimiser). The default `model` keeps the model's strings; `auto` re-fingers only when clearly awkward. |
 | `--tempo 90` | Uses a fixed tempo. The default `auto` follows the beats detected by Beat This!. |
 | `--grid 120` | Quantisation grid in ticks (960 = quarter): 240 = 16th notes (default), 120 = 32nd notes. |
-| `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_mid_gaps/best.pt` (E10, no audio augmentation) or `runs/tabmodel_mid/best.pt` (E8, GuitarSet only). |
+| `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_large_all/best.pt` (E18, large 66M model: slightly better on real and phone/room recordings, string choice +8 on held-out custom-dataset, 2.5x slower; a backup) or `runs/tabmodel_mid_gaps/best.pt` (E10, no audio augmentation). |
 | `--name X` | Output file stem. |
 | `--params JSON` | Note-extraction settings (keys of `DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`; `--onset` / `--orphan` apply on top. |
 | `--music_lm` | Fuller chords. Notes are decoded jointly with a small tab language model trained on ~12.7k symbolic tabs (`runs/tablm/tablm.pt`, `guitab/tablm.py`). Chords come out more complete (3–4 note chords +4 to +10 points on every benchmark set), overall F1 moves by about ±0.01, and a song takes 10–20 s longer. Ignores `--onset` / `--orphan` / `--params`. |

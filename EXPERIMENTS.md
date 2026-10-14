@@ -1087,7 +1087,7 @@ trained on symbolic tabs only, scores how plausible each chord is after the prev
   - default output unchanged (my_video tokens identical);
   - demo: `out/my_video/my_video_Q_music_lm.gp5`.
 
-### E18 — Large model from scratch on all data (`runs/tabmodel_large_all`) — 2026-10-12, RUNNING
+### E18 — Large model from scratch on all data (`runs/tabmodel_large_all`) — 2026-10-12 → 10-14: kept as a backup, not the default
 
 **Setup** (`scripts/train_large_all.sh`):
 - **Model:** `large` preset, 66.1M parameters (mid: 23.8M); same CQT input and heads.
@@ -1100,3 +1100,29 @@ trained on symbolic tabs only, scores how plausible each chord is after the prev
   (same update, half the peak memory); memory cap .53 (15 GB). 2.4 s/step, ~20 h of training plus evaluations, over several sessions.
 - **Why one mixed run rather than pretrain → fine-tune:** mixing sources per crop worked better than sequential stages (E13, E17).
   A single fixed schedule is also simpler to stop and resume.
+
+**Run:** stopped after step 26000 (no improvement since step 22000). Best = step 22000 (selection .7816; E15 .768).
+Checkpoint kept weights-only (`best.pt`, optimizer state removed, predictions verified identical); `last.pt` deleted.
+
+**Results (test sets evaluated once; E15 → E18):**
+
+| Set | E15 | E18 |
+|---|---|---|
+| GuitarSet test, pitch / string+fret F1 | .8662 / .8360 | .8647 / .8372 |
+| GuitarSet test degraded, pitch / string+fret | .7349 / .6503 | .7524 / .6750 |
+| GAPS test, pitch F1 / string agreement | .8268 / .8804 | .8193 / .8791 |
+| GAPS test degraded, pitch / agreement | .6841 / .7591 | .6913 / .7710 |
+| User song: pitch / tab F1 | .739 / .717 | .745 / .729 |
+| User song: bass recall, 2-note / 3+ complete | .64, .55 / .06 | .67, .67 / .09 |
+| User song --music_lm: pitch / tab F1, 2-note / 3+ | .745 / .719, .59 / .11 | .742 / .726, .69 / .09 |
+| custom-dataset held-out (5): pitch / tab F1 | .683 / .556 | .689 / .640 |
+| custom-dataset held-out: 2-note / 3+ complete | .55 / .29 | .45 / .29 |
+| custom-dataset held-out --music_lm: pitch / tab, 3+ | .671 / .554, .39 | .683 / .642, .38 |
+| Time per song / my_video transcription | 2.6 s / 6 s | 6.7 s / 15 s |
+
+**Conclusion:** 2.8x the parameters and ~1 day of training buy ~+1 point on real recordings and +2-3 on degraded audio,
+nothing on the clean tests (GAPS pitch -.0075), at 2.5x the inference time. The model is not capacity-limited at this
+data size: the clean sets are near their label ceiling and the gains appear only where data variety matters (degraded
+audio, real custom-dataset recordings, string choice +8 on held-out custom-dataset). Next lever: more real labelled data.
+Not the default (E15 stays); usable as a backup with `--checkpoint runs/tabmodel_large_all/best.pt`.
+Demos: `out/my_video/my_video_R_large.gp5`, `my_video_R_large_music_lm.gp5`.
