@@ -157,6 +157,7 @@ nohup scripts/train_mid_gaps_synth.sh > runs/tabmodel_mid_gaps_synth.log 2>&1 & 
 nohup scripts/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15 (best): E12 + SynthTab (strings at 0.3) + close-mic copy
 nohup scripts/train_mid_custom.sh > runs/tabmodel_mid_custom.log 2>&1 &   # E17: E15 + custom-dataset real recordings
 nohup scripts/train_large_all.sh > runs/tabmodel_large_all.log 2>&1 &   # E18: large model from scratch, all data (15 GB cap)
+nohup scripts/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19: mid from scratch, all data + enlarged custom dataset
 .venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
 grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
@@ -204,8 +205,8 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 | `synthtab_fetch.py` | Selected SynthTab subset: label archive, selection, range download. |
 | `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
 | `build_aug_cache.py` | CQT of augmented (training) and degraded (robustness test) audio → `data/tabmodel_cache_aug/`. |
-| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh`, `train_mid_gaps_synth.sh`, `train_mid_close.sh`, `train_mid_custom.sh`, `train_large_all.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 / E13 / E15 / E17 / E18 runs). |
-| `custom_fetch.py` | custom fingerstyle dataset: search, select, download the synced recordings, align and label. |
+| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh`, `train_mid_gaps_synth.sh`, `train_mid_close.sh`, `train_mid_custom.sh`, `train_large_all.sh`, `train_mid_all.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 / E13 / E15 / E17 / E18 / E19 runs). |
+| `custom_fetch.py` | custom fingerstyle dataset: search, select (append-only), download the synced recordings, align and label (incremental, `--shard k/n` for parallel processes). |
 | `train_tablm.py` | Chord corpus from symbolic tabs and the tab language model for `transcribe.py --music_lm`. |
 | `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
 | `evaluate_song.py` | The user-song benchmark: checkpoints vs the aligned reference tab of `my_video` (chord completeness, bass, F1); `--music_lm`. |

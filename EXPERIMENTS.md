@@ -1126,3 +1126,33 @@ data size: the clean sets are near their label ceiling and the gains appear only
 audio, real custom-dataset recordings, string choice +8 on held-out custom-dataset). Next lever: more real labelled data.
 Not the default (E15 stays); usable as a backup with `--checkpoint runs/tabmodel_large_all/best.pt`.
 Demos: `out/my_video/my_video_R_large.gp5`, `my_video_R_large_music_lm.gp5`.
+
+### E19 — Enlarged custom dataset + mid model from scratch on all data (`runs/tabmodel_mid_all`) — 2026-10-14, data ready, training not started
+
+**Why:** E18 showed the model is not capacity-limited (2.8x parameters, ~+1 point). The remaining lever is more real
+labelled audio; the custom dataset is the only source we can scale.
+
+**Data: custom dataset v2** (`scripts/custom_fetch.py`, same selection and labelling rules as E17):
+- **Search:** the 18 fingerstyle artists plus generic terms (Fingerstyle, Acoustic Fingerstyle, Fingerpicking, Acoustic,
+  Guitar Cover, Solo Guitar, Arrangement), paginated: 424 → 2541 candidates (single acoustic track, standard tuning).
+- **Select:** now append-only (the first 60 songs and their splits are unchanged); AI-generated tabs skipped (none among the
+  first 60); malformed tabs skipped. 360 songs selected (17.0 h; 40 ss_validation).
+- **Download:** 3 parallel workers; 330 downloaded. Some videos are unavailable or keep failing with HTTP 403; a 403 is often
+  transient (the 4 first-batch failures downloaded on retry).
+- **Label:** incremental (`--relabel` redoes), parallel shards (`--shard k/n`; a final unsharded run collects
+  `labels_summary.csv`), ~30 s per song. Songs whose audio is > 2x the tab duration + 60 s are skipped: wrong video
+  (one 53-min compilation made the free DTW run out of memory and killed a shard).
+- **Result:** 325 labelled, 165 pass the quality gate (E15 pitch F1 >= .5): **ss_train 146 songs (7.2 h of tab, 8.1 h of audio; 100 new),
+  ss_validation 19 (0.95 h, 14 new)**. Real labelled fingerstyle audio 2.67 h → 8.2 h (3x, not the 6x hoped for).
+- **Drop rate:** 58% of the new songs fail the gate vs 16% in the first batch. Scores are bimodal (114 songs < .3: wrong
+  video, other arrangement, vocals / band; 30 between .3 and .45; few borderline), so the threshold stays.
+- **Caveat:** the gate keeps songs E15 already transcribes reasonably well; it biases the subset towards "easier" audio.
+- The original 5 ss_validation songs stay in the held-out set; results will be reported on them (comparable with E15 / E18)
+  and on all 19.
+
+**Training setup** (`scripts/train_mid_all.sh`, not started; user's decision: run it on 2026-10-15):
+- mid (23.8M) **from scratch** (no `--init`), batch 16, no accumulation, usual memory cap .35 / .25.
+- Data shares: GuitarSet .25, GAPS .25 (strings .5), SynthTab .15 (strings .3), custom-dataset .35 (strings .5).
+- 3 augmented copies (aug0/aug1 phone-room, aug2 close-mic) on 60% of crops; clean + degraded validation.
+- 24k steps, lr 3e-4, warmup 1000.
+- Feature caches built (CQT + aug0/aug1/aug2 for all 146 ss_train songs); `load_split` verified.
