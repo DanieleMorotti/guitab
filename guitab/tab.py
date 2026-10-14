@@ -8,6 +8,8 @@ Back end of the transcriber:
   4. notes without a string get one (distinct strings per chord), then the Viterbi
      fingering optimiser picks playable positions;
   5. tokens are written in the DadaGP format (build_tokens) and converted to .gp5 (decode_to_gp5).
+With a capo (D6), tokens hold frets relative to the capo and the .gp5 track has its capo set; notes must already be
+playable with it (inference.apply_capo).
 
 Tab tokens: 960 ticks per quarter; notes still sounding at a barline are re-emitted with nfx:tie, and
 silent gaps of at least a quarter become rests.
@@ -79,13 +81,13 @@ class BeatGrid:
         return int(round(self.beat_index(t) * TICKS_PER_BEAT / grid)) * grid
 
 
-def assign_strings(group):
+def assign_strings(group, capo=0):
     """Give notes without a string a provisional distinct string (lowest playable first)."""
     used = {n["string"] for n in group if n.get("string")}
     for n in sorted(group, key=lambda n: n["pitch"]):
         if n.get("string"):
             continue
-        free = [s for s in sorted(OPEN_PITCH, reverse=True) if s not in used and 0 <= n["pitch"] - OPEN_PITCH[s] <= 20]
+        free = [s for s in sorted(OPEN_PITCH, reverse=True) if s not in used and capo <= n["pitch"] - OPEN_PITCH[s] <= 20]
         if not free:
             n["string"] = None
             continue
@@ -94,8 +96,9 @@ def assign_strings(group):
     return [n for n in group if n["string"]]
 
 
-def notes_to_tokens(notes, grid_obj, name="song", grid=240, fingering=None, max_notes=6):
-    """notes: dicts with onset, offset (s), pitch, optional string, optional score (for pruning)."""
+def notes_to_tokens(notes, grid_obj, name="song", grid=240, fingering=None, max_notes=6, capo=0):
+    """notes: dicts with onset, offset (s), pitch, optional string, optional score (for pruning).
+    capo: tokens get frets relative to it (refingering then works in the capo'd tuning)."""
     groups = {}
     for n in notes:
         on = grid_obj.ticks(n["onset"], grid)
@@ -118,14 +121,14 @@ def notes_to_tokens(notes, grid_obj, name="song", grid=240, fingering=None, max_
             if n.get("string"):
                 seen.add(n["string"])
             kept.append(n)
-        for n in assign_strings(kept):
+        for n in assign_strings(kept, capo):
             events.append(n)
     if not events:
         return None
     shift = min(n["on"] for n in events)
     measure = grid_obj.num_beats * TICKS_PER_BEAT
     shift = (shift // measure) * measure  # keep barlines, drop leading empty measures
-    tab_notes = [(n["on"] - shift, n["off"] - shift, n["string"], n["pitch"] - OPEN_PITCH[n["string"]]) for n in events]
+    tab_notes = [(n["on"] - shift, n["off"] - shift, n["string"], n["pitch"] - OPEN_PITCH[n["string"]] - capo) for n in events]
     tokens = build_tokens(name, tab_notes, grid_obj.tempo, grid_obj.num_beats)
     if fingering is not None:
         tokens = refinger_tokens(tokens, fingering)
@@ -196,7 +199,7 @@ def build_tokens(name, notes, tempo, num_beats):
     return tokens
 
 
-def decode_to_gp5(tokens, gp5_path):
+def decode_to_gp5(tokens, gp5_path, capo=0):
     from .dadagp_utils import DadaGP
 
     restored = [f"clean0:{t}" if t.startswith("note:") or t == "rest" else t for t in tokens]
@@ -204,3 +207,10 @@ def decode_to_gp5(tokens, gp5_path):
         handle.write("\n".join(restored) + "\n")
         name = handle.name
     DadaGP.decode(name, str(gp5_path))
+    if capo:
+        import guitarpro
+
+        song = guitarpro.parse(str(gp5_path))
+        for track in song.tracks:
+            track.offset = capo  # the Guitar Pro capo
+        guitarpro.write(song, str(gp5_path))

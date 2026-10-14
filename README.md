@@ -37,6 +37,7 @@ The output is `out/my_video/my_video.gp5`, plus `my_video.tokens.txt` (the tab a
 | `--orphan` | Also keeps notes without a detected attack. It was worse on GuitarSet, but may recover quiet or sustained notes. |
 | `--fingering low` | Re-fingers everything towards first position (Viterbi optimiser). The default `model` keeps the model's strings; `auto` re-fingers only when clearly awkward. |
 | `--tempo 90` | Uses a fixed tempo. The default `auto` follows the beats detected by Beat This!. |
+| `--capo 3` | Played with a capo at that fret: notes the model put below the capo move to a string that can play them, the tab shows frets relative to the capo (0 = capo), and the .gp5 has the capo set. On 12 held-out custom-dataset songs with a capo: string + fret F1 0.495 → 0.596, pitch unchanged. |
 | `--grid 120` | Quantisation grid in ticks (960 = quarter): 240 = 16th notes (default), 120 = 32nd notes. |
 | `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_large_all/best.pt` (E18, large 66M model: slightly better on real and phone/room recordings, string choice +8 on held-out custom-dataset, 2.5x slower; a backup) or `runs/tabmodel_mid_gaps/best.pt` (E10, no audio augmentation). |
 | `--name X` | Output file stem. |

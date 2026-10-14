@@ -1156,3 +1156,30 @@ labelled audio; the custom dataset is the only source we can scale.
 - 3 augmented copies (aug0/aug1 phone-room, aug2 close-mic) on 60% of crops; clean + degraded validation.
 - 24k steps, lr 3e-4, warmup 1000.
 - Feature caches built (CQT + aug0/aug1/aug2 for all 146 ss_train songs); `load_split` verified.
+
+### D6 — Capo-aware decoding (`transcribe.py --capo N`) — 2026-10-14, ADOPTED (opt-in option)
+
+**Problem:** with a capo at fret N, frets below N (and open strings) cannot be played, but the model does not know about
+the capo and often puts a pitch on a string where it would need such a fret. The tab also showed absolute frets,
+while guitarists read them relative to the capo.
+
+**Method** (no retraining; any checkpoint):
+- `inference.apply_capo`: a note below the capo keeps its pitch and moves to the string with the lowest playable fret
+  (>= capo, <= 20) not sounding at its onset; it is dropped if no string can play it (a pitch below the capo'd low E).
+- `tab.notes_to_tokens(..., capo)`: tokens hold frets relative to the capo (refingering then works in the capo'd tuning).
+- `tab.decode_to_gp5(..., capo)`: the .gp5 track's capo is set (pyguitarpro `Track.offset`), so playback pitch is right.
+
+**Results** (E15, the 12 ss_validation songs with a capo, labels with absolute frets, onset ±50 ms):
+
+| | without | with --capo |
+|---|---|---|
+| string + fret F1 (mean) | .495 | **.596** |
+| pitch F1 (mean) | .629 | .630 |
+
+- 0–39% of the predicted notes were below the capo (more with capo 5). Capo 5 songs gain the most:
+  "Time in a Bottle" .476 → .794, "Married Life" .366 → .600, "Kamado Tanjiro" .417 → .585.
+- Few notes are dropped (at most 31 of 1929 on one song).
+- Demo (capo 5): `out/capo_demo/time_in_a_bottle_no_capo.gp5` vs `time_in_a_bottle_capo5.gp5`; the first 8 notes of the
+  capo version match the reference tab exactly (string and relative fret).
+- Without `--capo`, the my_video tokens and .gp5 are byte-identical to before.
+- Not done: automatic capo detection (would need the capo guessed from the audio or the predictions).

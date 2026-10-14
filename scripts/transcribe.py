@@ -7,6 +7,7 @@ The CQT frame/onset tab model (default checkpoint runs/tabmodel_mid_gaps/best.pt
 Usage:
     python scripts/transcribe.py --audio my_song.wav --out_dir out/my_song [--onset 0.4] [--fingering low]
     python scripts/transcribe.py --audio my_song.wav --out_dir out/my_song --music_lm   # fuller chords (tab language model)
+    python scripts/transcribe.py --audio my_song.wav --out_dir out/my_song --capo 3     # played with a capo at fret 3
 """
 
 import argparse
@@ -19,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch  # noqa: E402
 
 from guitab.fingering import FINGERING_PRESETS  # noqa: E402
-from guitab.inference import transcribe_file  # noqa: E402
+from guitab.inference import apply_capo, transcribe_file  # noqa: E402
 from guitab.paths import DEFAULT_CHECKPOINT  # noqa: E402
 from guitab.tab import BeatGrid, decode_to_gp5, detect_beats, notes_to_tokens  # noqa: E402
 
@@ -51,6 +52,8 @@ def main():
                              "ignores --onset / --orphan / --params (EXPERIMENTS.md, A1).")
     parser.add_argument("--music_lm_weight", type=float, default=0.3, help="weight of the tab LM (0.3 tuned; >= 0.6 overrides the audio).")
     parser.add_argument("--music_lm_bonus", type=float, default=1.0, help="per-note bonus with --music_lm (higher = fuller chords, more false notes).")
+    parser.add_argument("--capo", type=int, default=0,
+                        help="capo fret: no notes below it, tab frets written relative to it, capo set in the .gp5 (D6).")
     parser.add_argument("--grid", type=int, default=240, help="Quantization grid in ticks (960 = quarter; 240 = 16th).")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--name", default=None, help="Output file stem (default: audio file stem).")
@@ -64,7 +67,7 @@ def main():
     if args.orphan:
         params.update(orphan=True, frame=0.5)
     music_lm = {"lam": args.music_lm_weight, "beta": args.music_lm_bonus} if args.music_lm else None
-    notes = transcribe_file(args.checkpoint, audio_path, device, params, music_lm)
+    notes = apply_capo(transcribe_file(args.checkpoint, audio_path, device, params, music_lm), args.capo)
     print(f"{len(notes)} notes")
     if args.tempo != "auto":
         grid = BeatGrid([], tempo=int(args.tempo))
@@ -75,14 +78,14 @@ def main():
 
     weights = None if args.fingering == "model" else FINGERING_PRESETS[args.fingering]
     stem = args.name or audio_path.stem
-    tokens = notes_to_tokens(notes, grid, stem, args.grid, weights)
+    tokens = notes_to_tokens(notes, grid, stem, args.grid, weights, capo=args.capo)
     if tokens is None:
         raise SystemExit("No notes were transcribed.")
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"{stem}.tokens.txt").write_text("\n".join(tokens) + "\n", encoding="utf-8")
     gp5_path = out_dir / f"{stem}.gp5"
-    decode_to_gp5(tokens, gp5_path)
+    decode_to_gp5(tokens, gp5_path, args.capo)
     print(f"-> {gp5_path}")
 
 

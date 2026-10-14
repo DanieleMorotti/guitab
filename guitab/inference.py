@@ -11,6 +11,7 @@ Notes are extracted per string:
     note whose fret posterior (mean over its frames) is higher is kept (0 = off);
   - a note that starts exactly where the previous note on the same string and fret ends (an onset peak that split a
     ringing note) is a real re-attack only if its onset probability >= `reattack`; otherwise the two are merged (0 = off).
+With a capo (apply_capo, D6), notes below the capo move to another string that can play their pitch.
 """
 
 import numpy as np
@@ -119,6 +120,22 @@ def merge_reattacks(notes, onset, thr):
             continue
         out.append(n)
         last[n["string"]] = n
+    return sorted(out, key=lambda n: (n["onset"], n["string"]))
+
+
+def apply_capo(notes, capo, max_fret=20):
+    """Notes (absolute frets) playable with a capo at `capo`: a note below the capo keeps its pitch and moves to the
+    string with the lowest playable fret (>= capo) that is not sounding at its onset; dropped if there is none (a pitch
+    below the capo'd low E). Frets stay absolute (fret 0 of the capo'd tab = fret `capo`)."""
+    if not capo:
+        return notes
+    out = sorted((dict(n) for n in notes if n["fret"] >= capo), key=lambda n: n["onset"])
+    for n in sorted((n for n in notes if n["fret"] < capo), key=lambda n: n["onset"]):
+        busy = {m["string"] for m in out if m["onset"] - 0.03 <= n["onset"] < m["offset"]}
+        options = [s for s in STRINGS if s not in busy and capo <= n["pitch"] - OPEN_PITCH[s] <= max_fret]
+        if options:
+            s = min(options, key=lambda s: n["pitch"] - OPEN_PITCH[s])
+            out.append({**n, "string": s, "fret": n["pitch"] - OPEN_PITCH[s]})
     return sorted(out, key=lambda n: (n["onset"], n["string"]))
 
 
