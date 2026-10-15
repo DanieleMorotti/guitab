@@ -7,7 +7,7 @@ Back end of the transcriber:
   3. onsets/offsets are snapped to a 16th (or 32nd) grid;
   4. notes without a string get one (distinct strings per chord), then the Viterbi
      fingering optimiser picks playable positions;
-  5. tokens are written in the DadaGP format (build_tokens) and converted to .gp5 (decode_to_gp5).
+  5. tokens are written (build_tokens) and converted to .gp5 (gp5.write_gp5).
 With a capo (D6), tokens hold frets relative to the capo and the .gp5 track has its capo set; notes must already be
 playable with it (inference.apply_capo).
 
@@ -15,18 +15,16 @@ Tab tokens: 960 ticks per quarter; notes still sounding at a barline are re-emit
 silent gaps of at least a quarter become rests.
 """
 
-import tempfile
-
 import numpy as np
 
 from .fingering import refinger_tokens
 from .guitar import OPEN_PITCH
 from .paths import BEAT_THIS_CKPT
 
-TICKS_PER_BEAT = 960  # DadaGP convention
+TICKS_PER_BEAT = 960
 GRID = 120  # 32nd note: finest grid the token writer supports
 MIN_REST_TICKS = 960
-# Note values DadaGP can encode on this grid (subset of dadagp.supported_times).
+# Beat lengths the .gp5 writer supports (gp5.DURATIONS).
 SUPPORTED_WAITS = [3840, 2880, 1920, 1440, 960, 720, 480, 360, 240, 120]
 
 
@@ -197,20 +195,3 @@ def build_tokens(name, notes, tempo, num_beats):
         tokens.pop()
     tokens.append("end")
     return tokens
-
-
-def decode_to_gp5(tokens, gp5_path, capo=0):
-    from .dadagp_utils import DadaGP
-
-    restored = [f"clean0:{t}" if t.startswith("note:") or t == "rest" else t for t in tokens]
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
-        handle.write("\n".join(restored) + "\n")
-        name = handle.name
-    DadaGP.decode(name, str(gp5_path))
-    if capo:
-        import guitarpro
-
-        song = guitarpro.parse(str(gp5_path))
-        for track in song.tracks:
-            track.offset = capo  # the Guitar Pro capo
-        guitarpro.write(song, str(gp5_path))

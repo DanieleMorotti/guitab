@@ -72,7 +72,7 @@ guitab/
 │   ├── gaps.py             GAPS case-safe files and string/fret labels
 │   ├── synthtab.py         SynthTab subset: paths, labels from per-string MIDI, latency correction
 │   ├── evaluation.py       evaluation protocols (GuitarSet chunks, full tracks, GAPS)
-│   └── dadagp_utils/       token ↔ Guitar Pro conversion (from Audio2Tab / DadaGP)
+│   └── gp5.py              tab tokens → Guitar Pro 5 file (pyguitarpro)
 ├── scripts/                command-line entry points (section 5)
 ├── data/eval_chunks.json   frozen GuitarSet evaluation chunks (the only versioned data file)
 ├── requirements.txt        exact package versions

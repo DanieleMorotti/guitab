@@ -2,7 +2,7 @@
 
 The CQT frame/onset tab model (default checkpoint runs/tabmodel_mid_all/best.pt, E19) predicts notes
 (seconds, string, fret); they are snapped to a grid that follows the beats detected by Beat This!
-(or a fixed --tempo), optionally re-fingered, and written as DadaGP tokens and .gp5.
+(or a fixed --tempo), optionally re-fingered, and written as tab tokens and .gp5.
 
 Usage:
     python scripts/transcribe.py --audio my_song.wav --out_dir out/my_song [--onset 0.4] [--fingering low]
@@ -22,7 +22,8 @@ import torch  # noqa: E402
 from guitab.fingering import FINGERING_PRESETS  # noqa: E402
 from guitab.inference import apply_capo, transcribe_file  # noqa: E402
 from guitab.paths import DEFAULT_CHECKPOINT  # noqa: E402
-from guitab.tab import BeatGrid, decode_to_gp5, detect_beats, notes_to_tokens  # noqa: E402
+from guitab.gp5 import write_gp5  # noqa: E402
+from guitab.tab import BeatGrid, detect_beats, notes_to_tokens  # noqa: E402
 
 
 def resolve_device(name):
@@ -85,7 +86,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"{stem}.tokens.txt").write_text("\n".join(tokens) + "\n", encoding="utf-8")
     gp5_path = out_dir / f"{stem}.gp5"
-    decode_to_gp5(tokens, gp5_path, args.capo)
+    write_gp5(tokens, gp5_path, args.capo)
     print(f"-> {gp5_path}")
 
 
