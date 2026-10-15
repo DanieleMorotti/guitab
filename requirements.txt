@@ -1,7 +1,8 @@
 # guitab environment — exact versions (Python 3.11). Install:
 #   uv venv .venv --python 3.11 && uv pip install --python .venv/bin/python -r requirements.txt
-# Direct dependencies: torch, numpy, librosa, soundfile, beat-this, pyguitarpro, pyyaml, tqdm,
-# pretty_midi, music21, yt-dlp, pedalboard. Everything else below is pulled in by them.
+# then: uv pip install --python .venv/bin/python -e . --no-deps   (the `guitab` command)
+# Direct dependencies (pyproject.toml): torch, numpy, librosa, soundfile, beat-this, pyguitarpro; for training also
+# scipy, pedalboard, pretty_midi, music21, yt-dlp. Everything else below is pulled in by them.
 # To add a package: install it, then regenerate the pins with
 #   uv pip freeze --python .venv/bin/python  (and keep this header).
 attrs==26.1.0

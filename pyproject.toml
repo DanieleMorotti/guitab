@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guitab"
+version = "0.1.0"
+description = "Guitar audio to Guitar Pro tab transcription, focused on fingerstyle"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+# transcription only; exact versions of the tested environment: requirements.txt
+dependencies = [
+    "torch>=2.4",
+    "numpy>=1.26",
+    "librosa>=0.10",
+    "soundfile>=0.12",
+    "pyguitarpro>=0.9",
+    "beat-this @ git+https://github.com/CPJKU/beat_this@b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
+]
+
+[project.optional-dependencies]
+# dataset preparation, audio augmentation and training
+train = ["scipy>=1.11", "pedalboard>=0.9", "pretty_midi>=0.2.10", "music21>=9", "yt-dlp"]
+
+[project.scripts]
+guitab = "guitab.cli:main"
+
+[tool.setuptools]
+packages = ["guitab"]
+
+[tool.ruff]
+line-length = 125

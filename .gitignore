@@ -19,3 +19,4 @@ __pycache__/
 data/custom/*
 !data/custom/selection.csv
 !data/custom/labels_summary.csv
+*.egg-info/
