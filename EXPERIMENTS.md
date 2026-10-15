@@ -1236,3 +1236,17 @@ on GuitarSet validation for E19 (`evaluate.py --tune`, 96 settings) keeps the cu
 frame .6, legato 8, no orphans) as the best. The checkpoint-independent decoding steps all apply unchanged: duplicate
 removal (D1), re-attack merge (D3), `--capo` (D6), `--music_lm` (A1, tuned with E15 probabilities; not re-tuned).
 Default transcription verified identical to `--checkpoint runs/tabmodel_mid_all/best.pt`.
+
+### Release clean-up — 2026-10-15
+
+Preparing a public GitHub release (code only, MIT; no weights; no custom-dataset code or data). Every step verified identical:
+- `guitab/metrics.py` (copied from Audio2Tab, no licence) → own `evaluation.token_metrics`: precision / recall / F1
+  bit-identical on test and validation for E15 and E19 (time-based onsets are summed wait by wait, as before).
+- `guitab/dadagp_utils/` (~2,500 copied lines) → own `guitab/gp5.py` (~90 lines): 22 earlier transcriptions plus fresh
+  ones identical in tempo, capo, tuning, measures, time signatures and every beat and note; no more debug printing.
+- `match()` moved into `guitab.evaluation`; experiment launchers moved to `experiments/`; `pyproject.toml` with a
+  `guitab` command (core vs `[train]` dependencies); ruff F/E/W/B clean; MIT `LICENSE`; README rewritten for outsiders;
+  proxy certificates used only when present.
+- **Branch `public`** (single commit, no history): main minus the custom-dataset code/data, the user-song benchmark and the
+  E17–E19 launchers; the full notebook is replaced by `docs/HISTORY.md`; default checkpoint = E15 (reproducible from
+  public data: E10 → E12 → E15). Checked: identical E15 transcription and test scores, training smoke test.
