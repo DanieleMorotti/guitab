@@ -65,7 +65,7 @@ def peaks(o, tau):
 def attack_groups(onset, tau, win):
     """[(frame, {column: (peak frame, onset prob)})]: per-string onset peaks merged across strings within win frames."""
     groups = []
-    for t, c in sorted((t, c) for c in range(6) for t in peaks(onset[:, c], tau)):
+    for t, c in sorted((t, col) for col in range(6) for t in peaks(onset[:, col], tau)):
         near = groups and t - groups[-1][0] <= win
         if near and (c not in groups[-1][1] or onset[t, c] > groups[-1][1][c][1]):
             groups[-1][1][c] = (t, float(onset[t, c]))

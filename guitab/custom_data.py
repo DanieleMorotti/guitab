@@ -15,7 +15,6 @@ extend the note they continue.
 """
 
 import csv
-import json
 from fractions import Fraction
 
 import numpy as np
