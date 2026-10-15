@@ -1215,3 +1215,17 @@ the default (GAPS pitch drop > .5). With the music LM it completes the most 3+ c
 lower F1. Neither scaling the model (E18) nor scaling the custom data (E19) moved the general benchmarks by more than
 ~1 point; the custom-dataset gains are partly in-domain (same uploaders, same alignment pipeline and label noise).
 Demo: `out/my_video/my_video_S_mid_all.gp5`. Usable with `--checkpoint runs/tabmodel_mid_all/best.pt`.
+
+**Paired per-recording comparison** (2026-10-15; full tracks, onset ±50 ms, Wilcoxon signed-rank):
+
+| Set (recordings) | E15 | E18 | E19 | E19 vs E15 | E19 vs E18 |
+|---|---|---|---|---|---|
+| GuitarSet test, string+fret (60) | .887 | .887 | **.899** | wins 37/60, +.011, p=.004 | wins 40/60, +.012, p=.002 |
+| GuitarSet test phone/room, string+fret (60) | .724 | **.751** | .736 | wins 32/60, +.012, p=.20 | wins 33/60, -.015, p=.78 |
+| GAPS test (classical), pitch (19) | **.827** | .819 | .813 | wins 4/19, -.014, p=.016 | wins 7/19, -.007, p=.29 |
+| custom-dataset held-out, string+fret (19) | .548 | .587 | **.617** | wins 16/19, +.068, p=.001 | wins 12/19, +.030, p=.08 |
+
+E19 is significantly better than E15 on steel-string material (GuitarSet, custom-dataset) and significantly worse only on
+GAPS (classical / nylon repertoire); against E18 it is better on clean steel-string audio and not significantly different
+elsewhere, at a third of the size. For the project's target (steel-string fingerstyle) it is the best-supported checkpoint;
+single songs (the user's recording, a random custom-dataset song) can go either way.
