@@ -1127,7 +1127,7 @@ audio, real custom-dataset recordings, string choice +8 on held-out custom-datas
 Not the default (E15 stays); usable as a backup with `--checkpoint runs/tabmodel_large_all/best.pt`.
 Demos: `out/my_video/my_video_R_large.gp5`, `my_video_R_large_music_lm.gp5`.
 
-### E19 — Enlarged custom dataset + mid model from scratch on all data (`runs/tabmodel_mid_all`) — 2026-10-14, data ready, training not started
+### E19 — Enlarged custom dataset + mid model from scratch on all data (`runs/tabmodel_mid_all`) — 2026-10-14 → 10-15: NOT the default (in-domain gains only)
 
 **Why:** E18 showed the model is not capacity-limited (2.8x parameters, ~+1 point). The remaining lever is more real
 labelled audio; the custom dataset is the only source we can scale.
@@ -1150,7 +1150,7 @@ labelled audio; the custom dataset is the only source we can scale.
 - The original 5 ss_validation songs stay in the held-out set; results will be reported on them (comparable with E15 / E18)
   and on all 19.
 
-**Training setup** (`scripts/train_mid_all.sh`, not started; user's decision: run it on 2026-10-15):
+**Training setup** (`scripts/train_mid_all.sh`, run on 2026-10-15):
 - mid (23.8M) **from scratch** (no `--init`), batch 16, no accumulation, usual memory cap .35 / .25.
 - Data shares: GuitarSet .25, GAPS .25 (strings .5), SynthTab .15 (strings .3), custom-dataset .35 (strings .5).
 - 3 augmented copies (aug0/aug1 phone-room, aug2 close-mic) on 60% of crops; clean + degraded validation.
@@ -1184,3 +1184,34 @@ while guitarists read them relative to the capo.
   capo version match the reference tab exactly (string and relative fret).
 - Without `--capo`, the my_video tokens and .gp5 are byte-identical to before.
 - Not done: automatic capo detection (would need the capo guessed from the audio or the predictions).
+
+**Run:** 1.17 s/step, 0.7 GB allocated between steps. Stopped by the user at step 21100 (flat since 17k). Best = step 18000
+(selection .7665; E18 .7816, E15 .768). Kept weights-only (`best.pt`, predictions verified identical); `last.pt` deleted.
+Validation vs E18 at the same step: equal or better on clean GuitarSet / GAPS / SynthTab / custom-dataset from ~12k on;
+consistently ~4 points behind on phone/room-degraded GuitarSet.
+
+**Results (test sets evaluated once; E15 / E18 / E19):**
+
+| Set | E15 | E18 (large) | E19 |
+|---|---|---|---|
+| GuitarSet test, pitch / string+fret F1 | .8662 / .8360 | .8647 / .8372 | .8656 / **.8433** |
+| GuitarSet test degraded, pitch / string+fret | .7349 / .6503 | **.7524 / .6750** | .7210 / .6402 |
+| GAPS test, pitch / agreement | **.8268 / .8804** | .8193 / .8791 | .8126 / .8713 |
+| GAPS test degraded, pitch / agreement | .6841 / .7591 | **.6913 / .7710** | .6830 / .7461 |
+| User song: pitch / tab F1 | .739 / .717 | **.745 / .729** | .725 / .703 |
+| User song: bass recall, 2-note / 3+ complete | .64, .55 / .06 | .67, .67 / .09 | .63, **.73** / .09 |
+| User song --music_lm: pitch / tab, 2-note / 3+ | .745 / .719, .59 / .11 | .742 / .726, .69 / .09 | .712 / .693, .72 / **.21** |
+| custom-dataset orig 5 held-out (±50 ms): pitch / tab F1 | .650 / .528 | .656 / .609 | **.677 / .630** |
+| custom-dataset all 19 held-out: pitch / tab F1 | .661 / .548 | .659 / .587 | **.673 / .617** |
+| custom-dataset all 19: 2-note / 3+ complete | .57 / .29 | .48 / .26 | .57 / .26 |
+
+(custom-dataset rows recomputed for all three models with the same script, onset ±50 ms; the E18 entry's custom-dataset numbers
+used a different tolerance.)
+
+**Conclusion:** 3x the real custom data helps on custom-dataset-like recordings (tab F1 +7 over E15, +3 over E18 on the
+19 held-out songs) and clean GuitarSet strings (.843, best so far), but not on anything out of that domain: GAPS pitch -1.4
+and degraded GuitarSet -1 vs E15, and the user's song -1.4 tab F1. Against E18 it loses ~3.5 points on degraded audio. Not
+the default (GAPS pitch drop > .5). With the music LM it completes the most 3+ chords on the user's song (.21) but at
+lower F1. Neither scaling the model (E18) nor scaling the custom data (E19) moved the general benchmarks by more than
+~1 point; the custom-dataset gains are partly in-domain (same uploaders, same alignment pipeline and label noise).
+Demo: `out/my_video/my_video_S_mid_all.gp5`. Usable with `--checkpoint runs/tabmodel_mid_all/best.pt`.
