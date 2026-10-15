@@ -17,9 +17,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from analyze_errors import match  # noqa: E402
 from guitab.audio import compute_cqt, load_audio  # noqa: E402
-from guitab.evaluation import match_f1  # noqa: E402
+from guitab.evaluation import match, match_f1  # noqa: E402
 from guitab.inference import extract_notes, load_model, predict  # noqa: E402
 from guitab.paths import DATA, ROOT  # noqa: E402
 

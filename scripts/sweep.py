@@ -21,12 +21,11 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from guitab.evaluation import chunk_text, load_chunks, match_f1, ref_notes  # noqa: E402
+from guitab.evaluation import chunk_text, load_chunks, match_f1, ref_notes, token_metrics  # noqa: E402
 from guitab.fingering import FINGERING_PRESETS, refinger_text  # noqa: E402
 from guitab.guitar import OPEN_PITCH, STRINGS  # noqa: E402
 from guitab.guitarset import jams_path  # noqa: E402
 from guitab.inference import DEFAULT_PARAMS, extract_notes, load_model, predict  # noqa: E402
-from guitab.metrics import compute_note_detection_metrics  # noqa: E402
 from guitab.paths import CACHE  # noqa: E402
 
 
@@ -85,7 +84,7 @@ def main():
             preds = [chunk_text(r, notes[p], s) for r, (p, s) in zip(refs, meta)]
             if fing != "model":
                 preds = [refinger_text(t, FINGERING_PRESETS[fing]) for t in preds]
-            m = compute_note_detection_metrics(refs, preds, 50, 120)
+            m = token_metrics(refs, preds)
             for k in ("time_pitch", "time_string_fret"):
                 row[f"{split}_{k}"] = [round(m[f"{k}_precision"], 4), round(m[f"{k}_recall"], 4), round(m[f"{k}_f1"], 4)]
             row[f"{split}_notes_per_chunk"] = round(sum(len([n for n in notes[p] if s <= n["onset"] < s + 15]) for p, s in meta) / len(meta), 1)

@@ -20,24 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from guitab.audio import FPS  # noqa: E402
 from guitab.data import load_split  # noqa: E402
-from guitab.evaluation import gaps_ref, ref_notes  # noqa: E402
+from guitab.evaluation import gaps_ref, match, ref_notes  # noqa: E402
 from guitab.guitar import OPEN_PITCH, STRINGS  # noqa: E402
 from guitab.inference import extract_notes, load_model, predict  # noqa: E402
 TOL = 0.05
-
-
-def match(ref, est, key, tol=TOL):
-    """Greedy matching like evaluation.match_f1; returns list of (ref_idx, est_idx)."""
-    by_id, used, pairs = {}, set(), []
-    for i, n in enumerate(est):
-        by_id.setdefault(tuple(n[k] for k in key), []).append(i)
-    for j, r in enumerate(ref):
-        c = [i for i in by_id.get(tuple(r[k] for k in key), []) if i not in used and abs(est[i]["onset"] - r["onset"]) <= tol]
-        if c:
-            i = min(c, key=lambda i: abs(est[i]["onset"] - r["onset"]))
-            used.add(i)
-            pairs.append((j, i))
-    return pairs
 
 
 def prf(tp, n_ref, n_est):

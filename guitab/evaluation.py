@@ -3,7 +3,8 @@
 GuitarSet chunk protocol (scripts/evaluate.py, scripts/sweep.py): the fixed 15 s chunks of
 data/eval_chunks.json (146 test / 147 validation, GuitarSet players 05 / 04). Each prediction is the
 full-track note list cut to the chunk and written as token text at the reference tempo, then scored
-with metrics.compute_note_detection_metrics (onset +-50 ms or +-120 ticks; pitch or string/fret).
+with token_metrics (onset +-50 ms or +-120 ticks; pitch or string/fret): notes are matched one-to-one,
+closest onsets first, over the whole set of chunks' counts.
 
 Full-track checks used during training: match_f1 on GuitarSet (string/fret, pitch) and GAPS
 (pitch F1 + string agreement with the score fingering).
@@ -17,7 +18,6 @@ import numpy as np
 from .guitar import OPEN_PITCH, STRINGS
 from .guitarset import string_notes
 from .inference import extract_notes, predict
-from .metrics import compute_note_detection_metrics
 from .paths import EVAL_CHUNKS
 
 KEYS = ["time_pitch_f1", "time_string_fret_f1", "tick_pitch_f1", "tick_string_fret_f1"]
@@ -32,8 +32,58 @@ def load_chunks(split):
     return [c["text"] for c in chunks], [(c["audio_path"], c["start"]) for c in chunks]
 
 
+def token_notes(text):
+    """[(onset s, onset ticks, string, fret)] of a token text (960 ticks per quarter at its first tempo)."""
+    tokens = text.split()
+    tempo = next((int(t.split(":")[1]) for t in tokens if t.startswith("tempo:")), 120)
+    seconds, ticks, out = 0.0, 0, []
+    for t in tokens:
+        if t.startswith("wait:"):
+            w = int(t.split(":")[1])
+            ticks += w
+            seconds += w / (960.0 * tempo / 60.0)  # summed wait by wait: the recorded scores depend on this rounding
+        elif t.startswith("note:") or ":note:" in t:
+            s, f = t.split(":")[-2:]
+            out.append((seconds, ticks, int(s[1:]), int(f[1:])))
+    return out
+
+
+def _matches(ref, est, onset, ident, tol):
+    """One-to-one matches with equal identity and |onset difference| <= tol, closest pairs first."""
+    pairs = sorted((abs(r[onset] - e[onset]), i, j) for i, r in enumerate(ref) for j, e in enumerate(est)
+                   if ident(r) == ident(e) and abs(r[onset] - e[onset]) <= tol)
+    used_r, used_e = set(), set()
+    for _, i, j in pairs:
+        if i not in used_r and j not in used_e:
+            used_r.add(i)
+            used_e.add(j)
+    return len(used_r)
+
+
+def token_metrics(refs, preds, time_tol=0.05, tick_tol=120):
+    """Precision / recall / F1 over all (reference, prediction) token texts, for time_ / tick_ onsets and _pitch /
+    _string_fret identities."""
+    pitch = lambda n: OPEN_PITCH[n[2]] + n[3]  # noqa: E731
+    string_fret = lambda n: (n[2], n[3])  # noqa: E731
+    configs = {"time_pitch": (0, pitch, time_tol), "time_string_fret": (0, string_fret, time_tol),
+               "tick_pitch": (1, pitch, tick_tol), "tick_string_fret": (1, string_fret, tick_tol)}
+    counts = {k: [0, 0, 0] for k in configs}  # matched, references, predictions
+    for ref_text, pred_text in zip(refs, preds):
+        ref, est = token_notes(ref_text), token_notes(pred_text)
+        for k, (onset, ident, tol) in configs.items():
+            c = counts[k]
+            c[0] += _matches(ref, est, onset, ident, tol)
+            c[1] += len(ref)
+            c[2] += len(est)
+    out = {}
+    for k, (tp, n_ref, n_est) in counts.items():
+        p, r = (tp / n_est if n_est else 0.0), (tp / n_ref if n_ref else 0.0)
+        out.update({f"{k}_precision": p, f"{k}_recall": r, f"{k}_f1": 2 * p * r / (p + r) if p + r else 0.0})
+    return out
+
+
 def score(refs, preds):
-    m = compute_note_detection_metrics(refs, preds, 50, 120)
+    m = token_metrics(refs, preds)
     return {k: round(m[k], 4) for k in KEYS}
 
 
@@ -51,18 +101,24 @@ def chunk_text(ref, notes, start, dur=15.0):
     return " ".join(out)
 
 
-def match_f1(ref, est, tol=0.05, key=("string", "fret")):
-    """Greedy note F1 by onset (+-tol s) and identity (`key` fields)."""
-    used = set()
-    tp = 0
-    by_id = {}
+def match(ref, est, key=("string", "fret"), tol=0.05):
+    """Greedy one-to-one matching of note dicts: each reference note in turn takes the unused estimate with the same
+    `key` fields and the closest onset within +-tol s. Returns [(ref index, est index)]."""
+    by_id, used, pairs = {}, set(), []
     for i, n in enumerate(est):
         by_id.setdefault(tuple(n[k] for k in key), []).append(i)
-    for r in ref:
+    for j, r in enumerate(ref):
         cands = [i for i in by_id.get(tuple(r[k] for k in key), []) if i not in used and abs(est[i]["onset"] - r["onset"]) <= tol]
         if cands:
-            used.add(min(cands, key=lambda i: abs(est[i]["onset"] - r["onset"])))
-            tp += 1
+            i = min(cands, key=lambda i: abs(est[i]["onset"] - r["onset"]))
+            used.add(i)
+            pairs.append((j, i))
+    return pairs
+
+
+def match_f1(ref, est, tol=0.05, key=("string", "fret")):
+    """Note F1 of the greedy matching (match)."""
+    tp = len(match(ref, est, key, tol))
     prec = tp / max(len(est), 1)
     rec = tp / max(len(ref), 1)
     return 2 * prec * rec / max(prec + rec, 1e-9)
