@@ -27,7 +27,7 @@ string choices are the tab writer's and probably not audible). Validation report
 SynthTab string/fret and pitch F1 (synth_validation) but the best checkpoint is still chosen on real audio.
 
 Launch through scripts/train_mid*.sh (memory cap, low priority, resume), e.g.
-    nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &
+    nohup experiments/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &
 """
 
 import argparse

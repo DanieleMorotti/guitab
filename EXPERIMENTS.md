@@ -297,7 +297,7 @@ Results are unchanged; verification is below.
 | `tools/gaps_common.py` + label logic of `tools/gaps_labels.py` | `guitab/gaps.py`; CLIs `scripts/gaps_extract.py`, `scripts/gaps_labels.py`, `scripts/gaps_download.py` |
 | `tools/train_tabmodel.py`, `eval_tabmodel.py`, `eval_gaps.py`, `sweep_tabmodel.py`, `transcribe.py` | `scripts/train.py`, `evaluate.py`, `evaluate_gaps.py`, `sweep.py`, `transcribe.py` (evaluation helpers → `guitab/evaluation.py`) |
 | `tools/guitarset_to_tokens.py`, `tools/guitarset_shift.py` | `scripts/prepare_guitarset.py` (writes only the track list; the reference token files were used only to build the frozen eval chunks), `scripts/guitarset_shift.py` |
-| `runs/train_tabmodel_mid*.sh` | `scripts/train_mid.sh`, `scripts/train_mid_gaps.sh` |
+| `runs/train_tabmodel_mid*.sh` | `experiments/train_mid.sh`, `experiments/train_mid_gaps.sh` |
 
 **Other changes:**
 - **Shared constants:** `OPEN_PITCH`, `STRINGS` and the fret classes now live in `guitab/guitar.py`, instead of being defined in four places.
@@ -418,7 +418,7 @@ The change is only in what the heads learn and how notes are built:
   - 3 seeded training batches with the model outputs and losses are identical;
   - E10 validation chunks are identical (.7672 / .7465), and so is GAPS validation (.8824 / .8639);
   - the demo tab is byte-identical.
-- **Command:** `nohup scripts/train_mid_gaps_reg.sh > runs/tabmodel_mid_gaps_reg.log 2>&1 &`
+- **Command:** `nohup experiments/train_mid_gaps_reg.sh > runs/tabmodel_mid_gaps_reg.log 2>&1 &`
   - 16k steps, batch 16, `--gaps_share 0.5 --gaps_tab_weight 0.5 --onset_target regression`;
   - validation during training uses `{"onset": 0.4, "subframe": true}`, since triangle targets peak below 1;
   - thresholds are tuned on validation after training (`evaluate.py --tune`, which also searches `offset` and `subframe`).
@@ -448,7 +448,7 @@ The change is only in what the heads learn and how notes are built:
 
 - **Stopped after the step-13000 eval** (laptop shutdown). By then the learning rate was 4e-5 on its cosine decay and the selection score
   had flattened (.8444 at 12k, .8436 at 13k). `best.pt` = step 12000. `last.pt` is kept, so the run can be resumed to 16k
-  with `scripts/train_mid_gaps_reg.sh`.
+  with `experiments/train_mid_gaps_reg.sh`.
 - **Tuning on validation** (`evaluate.py --tune`, release grid): onset 0.4, frame 0.5, legato 8, orphan off, dedup 4, offset 0.7, subframe on.
   - The release threshold makes no difference to attack-based F1: 0.7 and "off" (1.01) give the same scores.
   - Sub-frame attack times were selected.
@@ -484,7 +484,7 @@ The change is only in what the heads learn and how notes are built:
   the release decoding. Each would move results by about ±.005, within noise. The release head also learns only from
   GuitarSet's ~2 h of real audio (GAPS note lengths come from the score).
   - **Removed:** the E11 code (regression targets, release head, `--onset_target`, the release decoding and tuning grid,
-    `scripts/train_mid_gaps_reg.sh`), `runs/tabmodel_mid_gaps_reg/` (546 MB) and the E11 demo tab.
+    `experiments/train_mid_gaps_reg.sh`), `runs/tabmodel_mid_gaps_reg/` (546 MB) and the E11 demo tab.
   - **Kept:** D1 (dedup), `scripts/analyze_errors.py` and the generic `transcribe.py --params` option.
   - **Code at the time of the run:** commits `335a11f` and `37fe2b9`; it can be restored from git if needed.
   - **Checked after the removal:** the code under `guitab/` and `scripts/` (except `transcribe.py`) is byte-identical to the D1 commit;
@@ -519,7 +519,7 @@ and length, so the original labels are reused.
 - GAPS validation: pitch .7173 (.8824), string agreement .7875 (.8639).
 So phone / room conditions cost E10 .17–.28 F1.
 
-**Training** (`scripts/train_mid_gaps_aug.sh`): fine-tune from E10 `best.pt` (`--init`, new optimizer).
+**Training** (`experiments/train_mid_gaps_aug.sh`): fine-tune from E10 `best.pt` (`--init`, new optimizer).
 - 6k steps, learning rate 1e-4 (E10 used 3e-4) with 300 warm-up steps and cosine decay, batch 16, `--gaps_share 0.5`.
 - `--aug_copies 2 --aug_share 0.5`: half the crops use an augmented copy. The CQT-domain augmentations still apply on top.
 - `--eval_degraded`: every 1k steps it also scores the degraded validation copies.
@@ -634,7 +634,7 @@ so we use SynthTab: DadaGP tabs rendered with sampled guitars.
 - **Mixing keeps both:** chord supervision throughout, while real audio keeps the sound realistic.
 - **Starting point:** from E12, which keeps its phone/room robustness; about 3 h instead of 5+ h from scratch.
 
-**Run** (`scripts/train_mid_gaps_synth.sh`):
+**Run** (`experiments/train_mid_gaps_synth.sh`):
 - `--init` E12 `best.pt`, 8k steps, learning rate 1e-4, 300 warm-up steps, batch 16;
 - crops: GuitarSet .35 / GAPS .35 / SynthTab .3 (`--synth_share 0.3`); SynthTab tab-loss weight 1 (exact labels);
 - `--aug_copies 2 --aug_share 0.5` (SynthTab has 1 augmented copy);
@@ -725,7 +725,7 @@ So separate output heads were not the target (the tab head is already per string
 **Setup:**
 - The 5 octaves from E1 recomputed with `filter_scale` 0.25 (180 bins, `guitab/audio.py`, cache `data/tabmodel_cache_sharp`, 4.5 GB).
 - Fed as a second 6-channel harmonic stack; the new first-conv weights start at zero (identical outputs to E12 at step 0).
-- Fine-tuned from E12 with E12's recipe (`scripts/train_mid_gaps_sharp.sh`, 6k steps). Best checkpoint: step 6000.
+- Fine-tuned from E12 with E12's recipe (`experiments/train_mid_gaps_sharp.sh`, 6k steps). Best checkpoint: step 6000.
 
 **Validation, bass miss rates** (lower is better; "zeroed" = E14 with the sharp input set to 0):
 
@@ -790,7 +790,7 @@ What E12 outputs at a missed bass note (string 4–6, validation):
   Validation reshaped to that spectrum (per-track linear-phase EQ) makes E12 miss more pinch basses: GuitarSet .296 → .352.
 - Converting notes to the tab loses almost nothing (E15 on the video: 506 notes from the model, 502 in the tab).
 
-**Setup** (`scripts/train_mid_close.sh`, fine-tune of E12, 8k steps):
+**Setup** (`experiments/train_mid_close.sh`, fine-tune of E12, 8k steps):
 - E13's recipe (GAPS .35, SynthTab .3), with SynthTab tab-loss weight 0.3 (`--synth_tab_weight`; pitches and attacks keep full weight).
 - A third augmented copy `aug2` for every training track, including SynthTab (`augment.close_chain`, `build_aug_cache.py --close`):
   low shelf +3..+10 dB at 100–220 Hz, body peak +2..+8 dB at 80–150 Hz, high shelf −4..−12 dB from 1–3 kHz,
@@ -892,7 +892,7 @@ spectrum at inference only moved 3+ note recall .46 → .51.
 **Setup:**
 - `--mix_share 0.35`: a crop gets a second random crop added 6–25 dB quieter, summed as power from the dB features.
 - Labels: tab ignored where both crops use the same string; onsets merged; pitch loss skipped on those frames.
-- Fine-tune of E15 with E15's recipe, 6k steps (`scripts/train_mid_mix.sh`). Selected checkpoint: step 3000 (selection .7571).
+- Fine-tune of E15 with E15's recipe, 6k steps (`experiments/train_mid_mix.sh`). Selected checkpoint: step 3000 (selection .7571).
 
 **Results (E15 + D3 → E16 + D3):**
 
@@ -936,7 +936,7 @@ real recordings of dense fingerstyle with exact labels.
   Dropped: 2 recordings a semitone off the tab, 1 unalignable, 6 others.
 - `scripts/evaluate_song.py`: the user-song benchmark as a script.
 
-**Training:** fine-tune of E15, 6k steps (`scripts/train_mid_custom.sh`).
+**Training:** fine-tune of E15, 6k steps (`experiments/train_mid_custom.sh`).
 - Shares: custom-dataset .3 (string labels at weight .5), GAPS .3, SynthTab .2, GuitarSet .2.
 - 3 augmented copies per track.
 - Best checkpoint: step 6000 (selection .7683 vs E15 .7678).
@@ -1089,7 +1089,7 @@ trained on symbolic tabs only, scores how plausible each chord is after the prev
 
 ### E18 — Large model from scratch on all data (`runs/tabmodel_large_all`) — 2026-10-12 → 10-14: kept as a backup, not the default
 
-**Setup** (`scripts/train_large_all.sh`):
+**Setup** (`experiments/train_large_all.sh`):
 - **Model:** `large` preset, 66.1M parameters (mid: 23.8M); same CQT input and heads.
 - **Data:** from scratch, all data mixed per crop: GuitarSet .25 (+ pitch-shifted copies), GAPS .3 (strings .5),
   SynthTab .2 (strings .3), custom-dataset .25 (strings .5).
@@ -1150,7 +1150,7 @@ labelled audio; the custom dataset is the only source we can scale.
 - The original 5 ss_validation songs stay in the held-out set; results will be reported on them (comparable with E15 / E18)
   and on all 19.
 
-**Training setup** (`scripts/train_mid_all.sh`, run on 2026-10-15):
+**Training setup** (`experiments/train_mid_all.sh`, run on 2026-10-15):
 - mid (23.8M) **from scratch** (no `--init`), batch 16, no accumulation, usual memory cap .35 / .25.
 - Data shares: GuitarSet .25, GAPS .25 (strings .5), SynthTab .15 (strings .3), custom-dataset .35 (strings .5).
 - 3 augmented copies (aug0/aug1 phone-room, aug2 close-mic) on 60% of crops; clean + degraded validation.

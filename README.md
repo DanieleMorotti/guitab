@@ -74,6 +74,7 @@ guitab/
 │   ├── evaluation.py       evaluation protocols (GuitarSet chunks, full tracks, GAPS)
 │   └── gp5.py              tab tokens → Guitar Pro 5 file (pyguitarpro)
 ├── scripts/                command-line entry points (section 5)
+├── experiments/            exact launchers of the training runs (E8 … E19, see EXPERIMENTS.md)
 ├── data/eval_chunks.json   frozen GuitarSet evaluation chunks (the only versioned data file)
 ├── requirements.txt        exact package versions
 ├── README.md, EXPERIMENTS.md
@@ -155,14 +156,14 @@ The GAPS selection (standard tuning, MIDI matches the score, ≥ 50% of notes wi
 ### 4.2 Training
 
 ```bash
-nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &   # E10: GuitarSet + GAPS (best)
-nohup scripts/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: GuitarSet only
-nohup scripts/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1 &   # E12: E10 fine-tuned with audio augmentation
-nohup scripts/train_mid_gaps_synth.sh > runs/tabmodel_mid_gaps_synth.log 2>&1 &   # E13: E12 + SynthTab fingerstyle subset
-nohup scripts/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15: E12 + SynthTab (strings at 0.3) + close-mic copy
-nohup scripts/train_mid_custom.sh > runs/tabmodel_mid_custom.log 2>&1 &   # E17: E15 + custom-dataset real recordings
-nohup scripts/train_large_all.sh > runs/tabmodel_large_all.log 2>&1 &   # E18: large model from scratch, all data (15 GB cap)
-nohup scripts/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19 (default): mid from scratch, all data + enlarged custom dataset
+nohup experiments/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &   # E10: GuitarSet + GAPS (best)
+nohup experiments/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: GuitarSet only
+nohup experiments/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1 &   # E12: E10 fine-tuned with audio augmentation
+nohup experiments/train_mid_gaps_synth.sh > runs/tabmodel_mid_gaps_synth.log 2>&1 &   # E13: E12 + SynthTab fingerstyle subset
+nohup experiments/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15: E12 + SynthTab (strings at 0.3) + close-mic copy
+nohup experiments/train_mid_custom.sh > runs/tabmodel_mid_custom.log 2>&1 &   # E17: E15 + custom-dataset real recordings
+nohup experiments/train_large_all.sh > runs/tabmodel_large_all.log 2>&1 &   # E18: large model from scratch, all data (15 GB cap)
+nohup experiments/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19 (default): mid from scratch, all data + enlarged custom dataset
 .venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
 grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
@@ -179,7 +180,7 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 - **Memory:** the scripts cap GPU memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.35`, `LOW=0.25`; about 8 GB for `mid` at batch 16)
   and run at low priority, so the laptop stays usable. Training runs at about 1.1 s per step; 16k steps take about 5 h.
 - **Resume / pause:** the scripts pass `--resume`, so re-running one continues from `last.pt`.
-  `STOP_AT=18:30 scripts/train_mid_gaps.sh` saves and stops at the first evaluation after 18:30.
+  `STOP_AT=18:30 experiments/train_mid_gaps.sh` saves and stops at the first evaluation after 18:30.
 - **Outputs (in `--out`):** `best.pt` (best validation score), `last.pt` (for resuming; delete when finished) and `log.jsonl`.
 
 ### 4.3 Evaluation
@@ -210,7 +211,7 @@ grep EVAL runs/tabmodel_mid_gaps.log                                    # valida
 | `synthtab_fetch.py` | Selected SynthTab subset: label archive, selection, range download. |
 | `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
 | `build_aug_cache.py` | CQT of augmented (training) and degraded (robustness test) audio → `data/tabmodel_cache_aug/`. |
-| `train.py`, `train_mid.sh`, `train_mid_gaps.sh`, `train_mid_gaps_aug.sh`, `train_mid_gaps_synth.sh`, `train_mid_close.sh`, `train_mid_custom.sh`, `train_large_all.sh`, `train_mid_all.sh` | Training (the `.sh` files are the exact E8 / E10 / E12 / E13 / E15 / E17 / E18 / E19 runs). |
+| `train.py` | Training (the exact runs E8 / E10 / E12 / E13 / E15 / E17 / E18 / E19 are the launchers in `experiments/`). |
 | `custom_fetch.py` | custom fingerstyle dataset: search, select (append-only), download the synced recordings, align and label (incremental, `--shard k/n` for parallel processes). |
 | `train_tablm.py` | Chord corpus from symbolic tabs and the tab language model for `transcribe.py --music_lm`. |
 | `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
