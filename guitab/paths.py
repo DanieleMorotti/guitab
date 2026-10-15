@@ -13,7 +13,7 @@ GAPS = DATA / "gaps"
 EVAL_CHUNKS = DATA / "eval_chunks.json"   # frozen GuitarSet evaluation chunks (versioned)
 BEAT_THIS_CKPT = DATA / "models" / "beat_this-final0.ckpt"
 CERTS = DATA / "certs" / "macos_trusted.pem"
-DEFAULT_CHECKPOINT = RUNS / "tabmodel_mid_close" / "best.pt"
+DEFAULT_CHECKPOINT = RUNS / "tabmodel_mid_all" / "best.pt"  # E19
 TABLM_CHECKPOINT = RUNS / "tablm" / "tablm.pt"  # tab language model for --music_lm (scripts/train_tablm.py)
 
 

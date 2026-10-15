@@ -1127,7 +1127,7 @@ audio, real custom-dataset recordings, string choice +8 on held-out custom-datas
 Not the default (E15 stays); usable as a backup with `--checkpoint runs/tabmodel_large_all/best.pt`.
 Demos: `out/my_video/my_video_R_large.gp5`, `my_video_R_large_music_lm.gp5`.
 
-### E19 — Enlarged custom dataset + mid model from scratch on all data (`runs/tabmodel_mid_all`) — 2026-10-14 → 10-15: NOT the default (in-domain gains only)
+### E19 — Enlarged custom dataset + mid model from scratch on all data (`runs/tabmodel_mid_all`) — 2026-10-14 → 10-15: NEW DEFAULT (after the paired comparison)
 
 **Why:** E18 showed the model is not capacity-limited (2.8x parameters, ~+1 point). The remaining lever is more real
 labelled audio; the custom dataset is the only source we can scale.
@@ -1229,3 +1229,10 @@ E19 is significantly better than E15 on steel-string material (GuitarSet, custom
 GAPS (classical / nylon repertoire); against E18 it is better on clean steel-string audio and not significantly different
 elsewhere, at a third of the size. For the project's target (steel-string fingerstyle) it is the best-supported checkpoint;
 single songs (the user's recording, a random custom-dataset song) can go either way.
+
+**Decision (user, 2026-10-15): E19 is the new default** (`DEFAULT_CHECKPOINT`), overriding the GAPS rule: the target is
+steel-string fingerstyle, where the paired comparison favours E19; GAPS is classical nylon. Re-tuning the note thresholds
+on GuitarSet validation for E19 (`evaluate.py --tune`, 96 settings) keeps the current `DEFAULT_PARAMS` (onset .6,
+frame .6, legato 8, no orphans) as the best. The checkpoint-independent decoding steps all apply unchanged: duplicate
+removal (D1), re-attack merge (D3), `--capo` (D6), `--music_lm` (A1, tuned with E15 probabilities; not re-tuned).
+Default transcription verified identical to `--checkpoint runs/tabmodel_mid_all/best.pt`.

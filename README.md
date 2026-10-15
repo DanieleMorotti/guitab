@@ -6,12 +6,17 @@ MuseScore or any online gp5 player.
 The model reads a harmonic constant-Q spectrogram and predicts, at every frame (11.6 ms), the fret played on each of the
 6 strings plus note attacks. Notes are then snapped to the beats found by a beat tracker and written out as a tab.
 
-| Test set | Metric | Best model (`runs/tabmodel_mid_close/best.pt`, E15 + D3) |
-|---|---|---|
-| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.836** |
-| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | **0.866** |
-| GAPS test (fingerstyle, unseen players and rooms) | pitch F1 / string agreement | **0.827 / 0.880** |
-| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | **0.650 / 0.735** (E12: 0.645 / 0.730) |
+| Test set | Metric | Default model (`runs/tabmodel_mid_all/best.pt`, E19) | E15 (previous default) |
+|---|---|---|---|
+| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.843** | 0.836 |
+| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | 0.866 | 0.866 |
+| custom-dataset fingerstyle covers, 19 held-out recordings | string + fret F1 | **0.617** | 0.548 |
+| GAPS test (classical, unseen players and rooms) | pitch F1 / string agreement | 0.813 / 0.871 | **0.827 / 0.880** |
+| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.640 / 0.721 | **0.650 / 0.735** |
+
+E19 is the default because it is significantly better on steel-string material (per-recording comparison in
+EXPERIMENTS.md, E19); it is worse only on classical nylon repertoire (GAPS). `runs/tabmodel_mid_close/best.pt` (E15) and
+`runs/tabmodel_large_all/best.pt` (E18, large, most robust to phone/room audio, 2.5x slower) remain available via `--checkpoint`.
 
 The full history (including the original Whisper / Audio2Tab approach and a Basic Pitch baseline, both replaced),
 every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a new entry there for every experiment,
@@ -25,7 +30,7 @@ and commit each change separately.
 # 1) extract mono audio from a video or any audio file
 ffmpeg -i my_video.mov -ac 1 -ar 22050 out/my_video/my_video.wav
 
-# 2) transcribe (default checkpoint = best model, E15)
+# 2) transcribe (default checkpoint = best model, E19)
 .venv/bin/python scripts/transcribe.py --audio out/my_video/my_video.wav --out_dir out/my_video
 ```
 
@@ -155,10 +160,10 @@ nohup scripts/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &   # E10: Gui
 nohup scripts/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: GuitarSet only
 nohup scripts/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1 &   # E12: E10 fine-tuned with audio augmentation
 nohup scripts/train_mid_gaps_synth.sh > runs/tabmodel_mid_gaps_synth.log 2>&1 &   # E13: E12 + SynthTab fingerstyle subset
-nohup scripts/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15 (best): E12 + SynthTab (strings at 0.3) + close-mic copy
+nohup scripts/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15: E12 + SynthTab (strings at 0.3) + close-mic copy
 nohup scripts/train_mid_custom.sh > runs/tabmodel_mid_custom.log 2>&1 &   # E17: E15 + custom-dataset real recordings
 nohup scripts/train_large_all.sh > runs/tabmodel_large_all.log 2>&1 &   # E18: large model from scratch, all data (15 GB cap)
-nohup scripts/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19: mid from scratch, all data + enlarged custom dataset
+nohup scripts/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19 (default): mid from scratch, all data + enlarged custom dataset
 .venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
 grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
