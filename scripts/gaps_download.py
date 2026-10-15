@@ -3,8 +3,8 @@
 safe(h) (guitab/gaps.py) keeps ids that differ only by case apart on macOS.
 
 22.05 kHz mono WAV. The fine-aligned MIDI is in the timeline of the full YouTube audio (checked on
-mvswc: best offset 0.02 s). On this network HTTPS is re-signed by a corporate proxy, so yt-dlp
-uses the macOS trusted certificates exported to data/certs/macos_trusted.pem:
+mvswc: best offset 0.02 s). Behind a TLS-intercepting proxy, yt-dlp uses the macOS trusted certificates
+exported to data/certs/macos_trusted.pem when that file exists:
     (security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain;
      security find-certificate -a -p /Library/Keychains/System.keychain) > data/certs/macos_trusted.pem
 
@@ -45,7 +45,7 @@ def download(item):
     out = audio_path(h)
     if out.exists():
         return h, "cached"
-    env = {**os.environ, "SSL_CERT_FILE": str(CERTS)}
+    env = {**os.environ, "SSL_CERT_FILE": str(CERTS)} if CERTS.exists() else None
     cmd = [str(YTDLP), "-q", "--no-warnings", "--compat-options", "no-certifi", "-x", "--audio-format", "wav",
            "--postprocessor-args", "ffmpeg:-ar 22050 -ac 1", "-o", str(out.with_suffix(".%(ext)s")),
            f"https://www.youtube.com/watch?v={yt_id}"]

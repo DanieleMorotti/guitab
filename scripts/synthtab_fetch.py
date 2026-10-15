@@ -11,7 +11,7 @@ uncompressed FLAC members, so single songs are read with HTTP range requests. St
 alone reproduces the subset. Selection: standard tuning, 60-400 s, < 15% silence, mean polyphony 2.2-5,
 15-85% of attacks are chords, 3-14 notes/s, 20-65% of notes on strings 4-6, frets <= 19; one version per
 song, <= 3 songs per artist; 20 h synth_train + ~40 min synth_validation; timbres assigned round-robin.
-Office proxy: uses data/certs/macos_trusted.pem for TLS.
+Behind a TLS-intercepting proxy: uses data/certs/macos_trusted.pem when present.
 """
 
 import argparse
@@ -44,7 +44,7 @@ BOX = "https://rochester.app.box.com"
 LABEL_FILE_ID = 1486897975091
 TIMBRES = {"martin_finger": 257580635059, "taylor_finger": 257580872780, "luthier_finger": 257582454069,
            "gibson_thumb": 257781141038}
-CTX = ssl.create_default_context(cafile=str(CERTS))
+CTX = ssl.create_default_context(cafile=str(CERTS) if CERTS.exists() else None)
 
 
 def file_url(file_id):
@@ -88,7 +88,7 @@ class HttpFile(io.RawIOBase):
         n = min(len(b), self.size - self.pos)
         if n <= 0:
             return 0
-        for attempt in range(6):  # the office proxy occasionally drops a TLS connection
+        for attempt in range(6):  # a proxy can occasionally drop a TLS connection
             try:
                 req = urllib.request.Request(self.url, headers={"Range": f"bytes={self.pos}-{self.pos + n - 1}"})
                 with urllib.request.urlopen(req, context=CTX, timeout=120) as r:
