@@ -1,231 +1,174 @@
 # guitab — guitar audio → Guitar Pro tab
 
-Transcribes a guitar recording, with a focus on fingerstyle, into a tab: a `.gp5` file you can open in Guitar Pro, TuxGuitar,
-MuseScore or any online gp5 player.
+Transcribes a solo guitar recording, with a focus on steel-string fingerstyle, into a tab: a `.gp5` file you can open in
+Guitar Pro, TuxGuitar, MuseScore or any online gp5 player.
 
-The model reads a harmonic constant-Q spectrogram and predicts, at every frame (11.6 ms), the fret played on each of the
-6 strings plus note attacks. Notes are then snapped to the beats found by a beat tracker and written out as a tab.
+A convolutional + transformer model reads a constant-Q spectrogram of the audio and predicts, every 11.6 ms, which fret
+is sounding on each of the six strings and where notes start. The notes are then cleaned up (duplicates, split notes),
+optionally decoded with a small tab language model for fuller chords, snapped to the beats found by a beat tracker and
+written out as a tab.
 
-| Test set | Metric | Default model (`runs/tabmodel_mid_all/best.pt`, E19) | E15 (previous default) |
-|---|---|---|---|
-| GuitarSet, player 05 | string + fret F1 (onset ±50 ms) | **0.843** | 0.836 |
-| GuitarSet, player 05 | pitch F1 (onset ±50 ms) | 0.866 | 0.866 |
-| custom-dataset fingerstyle covers, 19 held-out recordings | string + fret F1 | **0.617** | 0.548 |
-| GAPS test (classical, unseen players and rooms) | pitch F1 / string agreement | 0.813 / 0.871 | **0.827 / 0.880** |
-| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.640 / 0.721 | **0.650 / 0.735** |
+**What to expect.** On clean recordings it gets about 85% of notes right with the correct string and fret; dense
+3–4 note chords, quiet inner voices and phone recordings in a room are much harder. Use the output as a first draft to
+correct by ear, not as a finished tab.
 
-E19 is the default because it is significantly better on steel-string material (per-recording comparison in
-EXPERIMENTS.md, E19); it is worse only on classical nylon repertoire (GAPS). `runs/tabmodel_mid_close/best.pt` (E15) and
-`runs/tabmodel_large_all/best.pt` (E18, large, most robust to phone/room audio, 2.5x slower) remain available via `--checkpoint`.
+| Test set | Metric (onset ±50 ms) | Default model (E19) |
+|---|---|---|
+| GuitarSet test (player 05, steel string) | string + fret F1 / pitch F1 | 0.843 / 0.866 |
+| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.640 / 0.721 |
+| GAPS test (classical guitar, unseen players and rooms) | pitch F1 | 0.813 |
+| Fingerstyle covers (19 held-out real recordings, private set) | string + fret F1 | 0.617 |
 
-The full history (including the original Whisper / Audio2Tab approach and a Basic Pitch baseline, both replaced),
-every setting and every result are in [`EXPERIMENTS.md`](EXPERIMENTS.md). Add a new entry there for every experiment,
-and commit each change separately.
-
----
-
-## 1. Quick start: transcribe your own recording
-
-```bash
-# 1) extract mono audio from a video or any audio file
-ffmpeg -i my_video.mov -ac 1 -ar 22050 out/my_video/my_video.wav
-
-# 2) transcribe (default checkpoint = best model, E19)
-.venv/bin/python scripts/transcribe.py --audio out/my_video/my_video.wav --out_dir out/my_video
-```
-
-The output is `out/my_video/my_video.gp5`, plus `my_video.tokens.txt` (the tab as text tokens).
-
-| Option | Effect |
-|---|---|
-| `--onset 0.4` | Keeps less confident notes, so more notes and more false ones. The default 0.6 was tuned on GuitarSet validation; try 0.4–0.5 if notes are missing on your guitar. |
-| `--orphan` | Also keeps notes without a detected attack. It was worse on GuitarSet, but may recover quiet or sustained notes. |
-| `--fingering low` | Re-fingers everything towards first position (Viterbi optimiser). The default `model` keeps the model's strings; `auto` re-fingers only when clearly awkward. |
-| `--tempo 90` | Uses a fixed tempo. The default `auto` follows the beats detected by Beat This!. |
-| `--capo 3` | Played with a capo at that fret: notes the model put below the capo move to a string that can play them, the tab shows frets relative to the capo (0 = capo), and the .gp5 has the capo set. On 12 held-out custom-dataset songs with a capo: string + fret F1 0.495 → 0.596, pitch unchanged. |
-| `--grid 120` | Quantisation grid in ticks (960 = quarter): 240 = 16th notes (default), 120 = 32nd notes. |
-| `--checkpoint PATH` | Another checkpoint, e.g. `runs/tabmodel_large_all/best.pt` (E18, large 66M model: slightly better on real and phone/room recordings, string choice +8 on held-out custom-dataset, 2.5x slower; a backup) or `runs/tabmodel_mid_gaps/best.pt` (E10, no audio augmentation). |
-| `--name X` | Output file stem. |
-| `--params JSON` | Note-extraction settings (keys of `DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`; `--onset` / `--orphan` apply on top. |
-| `--music_lm` | Fuller chords. Notes are decoded jointly with a small tab language model trained on ~12.7k symbolic tabs (`runs/tablm/tablm.pt`, `guitab/tablm.py`). Chords come out more complete (3–4 note chords +4 to +10 points on every benchmark set), overall F1 moves by about ±0.01, and a song takes 10–20 s longer. Ignores `--onset` / `--orphan` / `--params`. |
-| `--music_lm_weight 0.3` / `--music_lm_bonus 1.0` | Language-model weight (≥ 0.6 overrides the audio) and per-note bonus (higher = fuller chords, more false notes; 1.25 is a bit fuller). |
-
-Inference needs about 1–2 GB of GPU memory and takes under a minute for a 4-minute song on an M-series Mac.
+The whole research history (every experiment, setting and result, including approaches that did not work) is in
+[`EXPERIMENTS.md`](EXPERIMENTS.md).
 
 ---
 
-## 2. Repository layout
+## 1. Install
 
-```
-guitab/
-├── guitab/                 library (imported by the scripts)
-│   ├── paths.py            all data / run locations
-│   ├── guitar.py           tuning, string order, fret classes
-│   ├── audio.py            audio loading + CQT feature
-│   ├── model.py            TabModel (harmonic stack → CNN → transformer → tab/onset/pitch heads)
-│   ├── inference.py        sliding-window prediction + note extraction (DEFAULT_PARAMS)
-│   ├── tab.py              beat tracking, quantisation, tab tokens, .gp5 export
-│   ├── fingering.py        Viterbi fingering optimiser (+ presets)
-│   ├── augment.py          audio augmentation (phone / room renderings) and the held-out degradation
-│   ├── data.py             frame labels, track lists, splits, feature cache
-│   ├── guitarset.py        GuitarSet notes and splits
-│   ├── gaps.py             GAPS case-safe files and string/fret labels
-│   ├── synthtab.py         SynthTab subset: paths, labels from per-string MIDI, latency correction
-│   ├── evaluation.py       evaluation protocols (GuitarSet chunks, full tracks, GAPS)
-│   └── gp5.py              tab tokens → Guitar Pro 5 file (pyguitarpro)
-├── scripts/                command-line entry points (section 5)
-├── experiments/            exact launchers of the training runs (E8 … E19, see EXPERIMENTS.md)
-├── data/eval_chunks.json   frozen GuitarSet evaluation chunks (the only versioned data file)
-├── requirements.txt        exact package versions
-├── README.md, EXPERIMENTS.md
-│
-│   not versioned (.gitignore): rebuilt by the scripts or produced by training
-├── .venv/                  Python environment
-├── data/                   guitarset/, guitarset_shift/, gaps/, tabmodel_cache/, models/ (Beat This!), certs/,
-│                           tabmodel_cache_aug/, guitarset.csv, guitarset_shift.csv (track lists with repo-relative paths)
-├── runs/                   checkpoints (best.pt), training logs, sweep results
-└── out/                    your transcriptions
-```
-
----
-
-## 3. Environment
-
-All commands run from the repository root with Python 3.11.
+Python 3.11, from the repository root:
 
 ```bash
 uv venv .venv --python 3.11
-uv pip install --python .venv/bin/python -r requirements.txt
+uv pip install --python .venv/bin/python -r requirements.txt   # exact tested versions
+uv pip install --python .venv/bin/python -e . --no-deps          # the `guitab` command
 ```
+(`pip install -e ".[train]"` works too; `requirements.txt` pins the environment the results were produced with.)
 
-- **Pinned versions:** `requirements.txt` pins every package; its header lists the direct dependencies.
-  The main ones are torch 2.10, librosa 0.11, beat-this (pinned git commit), music21 10.5, pretty-midi 0.2.11 and pyguitarpro 0.9.3.
-- **Hardware:** on a Mac, everything runs on MPS (Apple GPU) automatically.
-- **Beat This! weights:** downloaded on first use, or put in `data/models/beat_this-final0.ckpt` (see section 6).
+On a Mac everything runs on the Apple GPU (MPS); CUDA and CPU work as well. The Beat This! beat-tracker weights are
+downloaded on first use.
 
----
+**Model weights are not distributed.** Train a model first (section 4); `guitab` uses `runs/tabmodel_mid_all/best.pt`
+unless you pass `--checkpoint`.
 
-## 4. Training and evaluation
+## 2. Transcribe a recording
 
-### 4.1 Data preparation (one-off)
-
-**GuitarSet** (CC-BY; [Zenodo 3371780](https://zenodo.org/records/3371780)): download `annotation.zip` and `audio_mono-mic.zip`, and unzip them into `data/guitarset/annotation/` and `data/guitarset/audio_mic/`. Then:
 ```bash
-.venv/bin/python scripts/prepare_guitarset.py     # data/guitarset.csv (players 00-03 train, 04 validation, 05 test)
-.venv/bin/python scripts/guitarset_shift.py       # +1/+2 semitone copies of the train players (data/guitarset_shift.csv)
+ffmpeg -i my_video.mov -ac 1 -ar 22050 out/my_song/my_song.wav    # any audio or video file -> mono wav
+.venv/bin/guitab --audio out/my_song/my_song.wav --out_dir out/my_song
 ```
 
-**GAPS** (classical / fingerstyle, CC BY-NC-SA; [Zenodo 13962272](https://zenodo.org/records/13962272)):
+The output is `out/my_song/my_song.gp5`, plus `my_song.tokens.txt` (the same tab as text tokens). A 4-minute song takes
+well under a minute and 1–2 GB of GPU memory.
+
+| Option | Effect |
+|---|---|
+| `--capo 3` | The song is played with a capo at that fret: notes are kept on strings that can play them, frets are written relative to the capo, and the .gp5 has the capo set. |
+| `--music_lm` | Fuller chords: notes are decoded jointly with a small tab language model trained on symbolic tabs. 3–4 note chords come out more complete; overall accuracy changes by about ±1 point; 10–20 s slower. |
+| `--onset 0.4` | Keep less confident notes (default 0.6): more notes, more false ones. Try 0.4–0.5 if notes are missing. |
+| `--orphan` | Also keep notes without a detected attack (quiet or sustained notes). |
+| `--fingering low` | Re-finger towards first position (Viterbi optimiser). The default `model` keeps the model's strings; `auto` re-fingers only clearly awkward shapes. |
+| `--tempo 90` | Fixed tempo instead of following the detected beats. |
+| `--grid 120` | Quantisation grid in ticks (960 = quarter note): 240 = 16ths (default), 120 = 32nds. |
+| `--checkpoint PATH` | Another trained model. |
+| `--name X` | Output file name. |
+| `--params JSON` | Note-extraction settings (`DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`. |
+| `--music_lm_weight 0.3` / `--music_lm_bonus 1.0` | Language-model weight and per-note bonus (higher = fuller chords, more false notes). |
+
+## 3. How it works
+
+1. **Features** (`guitab/audio.py`): 22.05 kHz mono → constant-Q spectrogram, 36 bins per octave, 8 octaves, hop 256.
+2. **Model** (`guitab/model.py`): harmonic stacking → CNN → transformer over time → per frame and string: fret
+   (21 classes incl. silent), onset, plus a pitch head. Sizes `mid` (24M parameters, default) and `large` (66M).
+3. **Note extraction** (`guitab/inference.py`): notes start at onset peaks, take the most likely fret, end at silence,
+   a new attack or a fret change (legato); the same pitch on two strings at once is kept once; an attack that splits a
+   ringing note is merged back; with a capo, notes below it move to a playable string.
+4. **Optional chord decoding** (`guitab/tablm.py`, `--music_lm`): beam search over candidate chords scored by the
+   acoustic model plus a 3.3M-parameter transformer trained on ~12.7k symbolic guitar tabs.
+5. **Tab** (`guitab/tab.py`, `guitab/fingering.py`, `guitab/gp5.py`): beats and downbeats from Beat This!, quantisation
+   to a grid that follows tempo drift, optional re-fingering, Guitar Pro 5 output.
+
+## 4. Training
+
+All commands run from the repository root.
+
+### 4.1 Data (one-off)
+
+**GuitarSet** (CC BY 4.0; [Zenodo 3371780](https://zenodo.org/records/3371780)): download `annotation.zip` and
+`audio_mono-mic.zip` and unzip them into `data/guitarset/annotation/` and `data/guitarset/audio_mic/`. Then:
+```bash
+.venv/bin/python scripts/prepare_guitarset.py     # track list (players 00-03 train, 04 validation, 05 test)
+.venv/bin/python scripts/guitarset_shift.py       # +1/+2 semitone copies of the training players
+```
+
+**GAPS** (classical guitar, CC BY-NC-SA 4.0; [Zenodo 13962272](https://zenodo.org/records/13962272)):
 ```bash
 mkdir -p data/gaps && curl -L -o data/gaps/gaps_v1_no_audio.zip \
   "https://zenodo.org/records/13962272/files/gaps_v1_no_audio.zip?download=1"
-(cd data/gaps && unzip -o gaps_v1_no_audio.zip "gaps_v1/*.csv")   # only the csv files are safe to unzip
-.venv/bin/python scripts/gaps_extract.py          # MIDI / MusicXML with case-safe names (see note)
-.venv/bin/python scripts/gaps_download.py         # audio from YouTube; run twice to retry 403 errors
-.venv/bin/python scripts/gaps_labels.py           # string/fret labels: score tab staff aligned to the MIDI
+(cd data/gaps && unzip -o gaps_v1_no_audio.zip "gaps_v1/*.csv")   # only the csv files: see the note below
+.venv/bin/python scripts/gaps_extract.py          # MIDI / MusicXML with case-safe file names
+.venv/bin/python scripts/gaps_download.py         # audio from the dataset's YouTube links; run twice to retry errors
+.venv/bin/python scripts/gaps_labels.py           # string/fret labels from the score's tab staff, aligned to the MIDI
 ```
-> GAPS ids differ only by upper/lower case (`GM1wc` ≠ `gM1wc`). A normal unzip on macOS silently overwrites files,
-> so always use `scripts/gaps_extract.py`.
-> `gaps_labels.py --only <id> ...` rebuilds selected pieces and keeps the other rows of `labels_summary.csv`.
+> GAPS ids differ only by letter case (`GM1wc` ≠ `gM1wc`); a plain unzip on a case-insensitive file system overwrites
+> files, so always extract with `scripts/gaps_extract.py`.
 
-**SynthTab subset** (DadaGP tabs rendered with sampled guitars, CC BY-NC 4.0; [SynthTab](https://github.com/AirLabUR/SynthTab)).
-We download only 428 selected songs (20 h + 0.7 h, fingerpicked acoustic timbres, polyphonic fingerstyle; 5.3 GB audio + 1.1 GB labels)
-with HTTP range requests from the 2 TB dataset:
+**SynthTab subset** (tabs rendered with sampled guitars, CC BY-NC 4.0; [SynthTab](https://github.com/AirLabUR/SynthTab)):
+428 selected fingerstyle songs (about 21 h; 5.3 GB audio + 1.1 GB labels), fetched with HTTP range requests from the
+2 TB dataset:
 ```bash
-.venv/bin/python scripts/synthtab_fetch.py labels     # label archive (JAMS + per-string MIDI)
-.venv/bin/python scripts/synthtab_fetch.py download   # the songs listed in data/synthtab/selection.csv (versioned) + labels
-# (scripts/synthtab_fetch.py select re-creates selection.csv; it indexes the remote zips and takes about 15 min)
+.venv/bin/python scripts/synthtab_fetch.py labels     # label archive
+.venv/bin/python scripts/synthtab_fetch.py download   # the songs in data/synthtab/selection.csv (versioned)
 ```
-Labels are shifted by each timbre's rendering latency (17–58 ms, `LATENCY_MS` in `guitab/synthtab.py`).
 
-**Feature cache** (CQT + frame labels for all tracks; about 10 min, 2.6 GB):
+**custom dataset** (private: real fingerstyle recordings labelled with fan-made tabs, personal use only; not part of
+the public release): `scripts/custom_fetch.py search|select|download|label`, see `guitab/custom_data.py`.
+
+**Feature caches**:
 ```bash
-.venv/bin/python scripts/build_cache.py --workers 4
+.venv/bin/python scripts/build_cache.py --workers 4                    # CQT + frame labels (~10 min, 2.6 GB)
+.venv/bin/python scripts/build_aug_cache.py --copies 2 --close --workers 4   # augmented training copies (phone/room, close mic)
+.venv/bin/python scripts/build_aug_cache.py --degraded --workers 4     # held-out degraded copies for robustness tests
 ```
-**Audio-augmented features** (`guitab/augment.py`; phone/room renderings, labels unchanged; about 15 min, 4.7 GB):
+
+### 4.2 Train
+
+The exact command lines of every training run are in `experiments/` (E8 … E19, described in EXPERIMENTS.md):
 ```bash
-.venv/bin/python scripts/build_aug_cache.py --copies 2 --workers 4   # 2 training copies per train / gaps_train track
-.venv/bin/python scripts/build_aug_cache.py --close --workers 4      # copy aug2: close-mic phone sound (E15), incl. synth_train
-.venv/bin/python scripts/build_aug_cache.py --degraded --workers 4   # held-out degraded copies of validation / test
-```
-Score the degraded copies with `--variant deg` on `evaluate.py` and `evaluate_gaps.py` (robustness to phone / room audio).
-
-The GAPS selection (standard tuning, MIDI matches the score, ≥ 50% of notes with a string label) is in `guitab/data.py`
-(`gaps_selection`). It gives 123 train, 14 validation and 19 test pieces.
-
-### 4.2 Training
-
-```bash
-nohup experiments/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &   # E10: GuitarSet + GAPS (best)
-nohup experiments/train_mid.sh      > runs/tabmodel_mid.log      2>&1 &   # E8: GuitarSet only
-nohup experiments/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1 &   # E12: E10 fine-tuned with audio augmentation
-nohup experiments/train_mid_gaps_synth.sh > runs/tabmodel_mid_gaps_synth.log 2>&1 &   # E13: E12 + SynthTab fingerstyle subset
-nohup experiments/train_mid_close.sh > runs/tabmodel_mid_close.log 2>&1 &   # E15: E12 + SynthTab (strings at 0.3) + close-mic copy
-nohup experiments/train_mid_custom.sh > runs/tabmodel_mid_custom.log 2>&1 &   # E17: E15 + custom-dataset real recordings
-nohup experiments/train_large_all.sh > runs/tabmodel_large_all.log 2>&1 &   # E18: large model from scratch, all data (15 GB cap)
-nohup experiments/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19 (default): mid from scratch, all data + enlarged custom dataset
+nohup experiments/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19, the default model (~8 h on an M-series Mac)
+grep EVAL runs/tabmodel_mid_all.log                                      # validation every 1000 steps
 .venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
-grep EVAL runs/tabmodel_mid_gaps.log                                    # validation every 1000 steps
 ```
-- **Options:** both launch scripts call `scripts/train.py`.
-  - `--out` — output folder; use a new one per experiment.
-  - `--size mid|large` — about 24M / 66M parameters (`large` needs `--accum 2` within a 15 GB memory cap).
-  - `--steps`, `--batch`, `--lr`.
-  - `--gaps_share` — the share of 5 s crops taken from GAPS.
-  - `--gaps_tab_weight` — the loss weight of GAPS string labels.
-  - `--eval_every`.
-  - `--synth_share` — the share of crops taken from the SynthTab subset (exact labels, tab-loss weight 1).
-  - `--init` — start from a checkpoint's weights (fine-tuning); `--aug_copies` / `--aug_share` — audio-augmented copies
-    and the share of crops that use one; `--eval_degraded` — also validate on the degraded copies.
-- **Memory:** the scripts cap GPU memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.35`, `LOW=0.25`; about 8 GB for `mid` at batch 16)
-  and run at low priority, so the laptop stays usable. Training runs at about 1.1 s per step; 16k steps take about 5 h.
-- **Resume / pause:** the scripts pass `--resume`, so re-running one continues from `last.pt`.
-  `STOP_AT=18:30 experiments/train_mid_gaps.sh` saves and stops at the first evaluation after 18:30.
-- **Outputs (in `--out`):** `best.pt` (best validation score), `last.pt` (for resuming; delete when finished) and `log.jsonl`.
+- `scripts/train.py` options: `--size mid|large`, `--steps`, `--batch`, `--lr`, `--accum` (gradient accumulation);
+  data shares `--gaps_share`, `--synth_share`, `--ss_share` and their string-label weights `--*_tab_weight`; audio
+  augmentation `--aug_copies`, `--aug_share`; `--init` (fine-tune from a checkpoint); `--eval_degraded`.
+- The launchers cap GPU memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO`) and run at low priority so the machine stays usable.
+  Re-running a launcher resumes from `last.pt`; `STOP_AT=18:30 experiments/...` stops at the first evaluation after 18:30.
+- Outputs in `runs/<name>/`: `best.pt` (best validation score), `last.pt` (for resuming) and `log.jsonl`.
 
-### 4.3 Evaluation
+## 5. Evaluation
 
 ```bash
-# GuitarSet test player 05: time/tick x pitch/string-fret F1 on the fixed 15 s chunks
-.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_gaps/best.pt --split test
-# tune note-extraction thresholds (ONLY on validation), then copy the best to DEFAULT_PARAMS in guitab/inference.py
-.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_gaps/best.pt --split validation --tune
-# GAPS test (fingerstyle, unseen players / rooms): pitch F1 + string agreement with the score fingering
-.venv/bin/python scripts/evaluate_gaps.py --checkpoints runs/tabmodel_mid/best.pt runs/tabmodel_mid_gaps/best.pt
-# precision/recall sweep of thresholds and fingering, plus benchmark-style frame/note metrics (~25 min)
-.venv/bin/python scripts/sweep.py --checkpoint runs/tabmodel_mid_gaps/best.pt --out runs/sweep_tabmodel_mid_gaps.json
+.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_all/best.pt --split test             # GuitarSet test
+.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_all/best.pt --split test --variant deg   # degraded copy
+.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_all/best.pt --split validation --tune   # threshold search
+.venv/bin/python scripts/evaluate_gaps.py --checkpoints runs/tabmodel_mid_all/best.pt                    # GAPS test
+.venv/bin/python scripts/sweep.py --checkpoint runs/tabmodel_mid_all/best.pt --out runs/sweep.json       # P/R sweep + frame metrics
 ```
-- **The rule:** choose checkpoints and settings on validation (GuitarSet player 04, GAPS validation), and report test only once per model.
-- **`data/eval_chunks.json`** (146 test / 147 validation chunks of 15 s, with the reference tabs) was generated once with the original
-  Audio2Tab chunk schedule. It is frozen: keep it unchanged, so results stay comparable.
+- Choose checkpoints and settings on validation only (GuitarSet player 04, GAPS validation); report test once per model.
+- GuitarSet is scored on the fixed 15 s chunks of `data/eval_chunks.json` (frozen, so results stay comparable).
+- `scripts/analyze_errors.py` breaks the errors down by category; `scripts/evaluate_song.py` is the private benchmark on
+  the author's own recording.
 
----
+## 6. Repository layout
 
-## 5. Scripts (`scripts/`)
-
-| Script | Purpose |
-|---|---|
-| `transcribe.py` | Audio → `.gp5` (section 1). |
-| `prepare_guitarset.py`, `guitarset_shift.py` | GuitarSet track list; pitch-shifted copies. |
-| `gaps_extract.py`, `gaps_download.py`, `gaps_labels.py` | GAPS case-safe extraction, audio download, string/fret labels. |
-| `synthtab_fetch.py` | Selected SynthTab subset: label archive, selection, range download. |
-| `build_cache.py` | CQT features + frame labels for every track → `data/tabmodel_cache/`. |
-| `build_aug_cache.py` | CQT of augmented (training) and degraded (robustness test) audio → `data/tabmodel_cache_aug/`. |
-| `train.py` | Training (the exact runs E8 / E10 / E12 / E13 / E15 / E17 / E18 / E19 are the launchers in `experiments/`). |
-| `custom_fetch.py` | custom fingerstyle dataset: search, select (append-only), download the synced recordings, align and label (incremental, `--shard k/n` for parallel processes). |
-| `train_tablm.py` | Chord corpus from symbolic tabs and the tab language model for `transcribe.py --music_lm`. |
-| `evaluate.py`, `evaluate_gaps.py`, `sweep.py` | Evaluation (section 4.3). |
-| `evaluate_song.py` | The user-song benchmark: checkpoints vs the aligned reference tab of `my_video` (chord completeness, bass, F1); `--music_lm`. |
-| `analyze_errors.py` | Error breakdown on validation and train subsets: miss / false-note categories, string accuracy, generalisation gap. |
-
----
-
-## 6. Network note
-
-The office network re-signs HTTPS, so Python downloads (Beat This! weights, yt-dlp) can fail with `CERTIFICATE_VERIFY_FAILED`.
-- Download single files with `curl`, which uses the macOS keychain. For example, the Beat This! checkpoint goes into `data/models/`.
-- For yt-dlp, `scripts/gaps_download.py` sets `SSL_CERT_FILE=data/certs/macos_trusted.pem`. Regenerate that file with:
-```bash
-mkdir -p data/certs && (security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain;
- security find-certificate -a -p /Library/Keychains/System.keychain) > data/certs/macos_trusted.pem
 ```
+guitab/            the library: audio, model, inference, tablm, tab, fingering, gp5, cli, data, augment,
+                   guitarset, gaps, synthtab, evaluation, paths
+scripts/           command-line tools: data preparation, caches, training, evaluation
+experiments/       exact launchers of the training runs (see EXPERIMENTS.md)
+data/              datasets and caches (not versioned except eval_chunks.json and the subset selections)
+runs/              checkpoints and logs (not versioned)
+out/               transcriptions (not versioned)
+```
+
+> **Behind a TLS-intercepting proxy** Python downloads can fail with `CERTIFICATE_VERIFY_FAILED`. On macOS, export the
+> system certificates and point `SSL_CERT_FILE` at them (`scripts/gaps_download.py` uses `data/certs/macos_trusted.pem`):
+> `mkdir -p data/certs && security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain /Library/Keychains/System.keychain > data/certs/macos_trusted.pem`
+
+## Licence and credits
+
+Code: MIT (see `LICENSE`). Datasets keep their own licences (GuitarSet CC BY 4.0, GAPS CC BY-NC-SA 4.0, SynthTab
+CC BY-NC 4.0); a model trained on them inherits their non-commercial terms. Beat tracking: [Beat This!](https://github.com/CPJKU/beat_this).
+The research started from [Audio2Tab](https://github.com/JackJamesLoth/Audio2Tab); the GuitarSet evaluation chunks
+follow its schedule.
