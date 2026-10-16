@@ -13,10 +13,10 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.device import DEVICES, pick_device  # noqa: E402
 from guitab.audio import compute_cqt, load_audio  # noqa: E402
 from guitab.evaluation import match, match_f1  # noqa: E402
 from guitab.inference import extract_notes, load_model, predict  # noqa: E402
@@ -38,6 +38,7 @@ def groups_of(ref):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--checkpoints", nargs="+", required=True)
     parser.add_argument("--reference", default=str(DATA / "my_video_reference.json"))
     parser.add_argument("--audio", default=str(ROOT / "out" / "my_video" / "my_video.wav"))
@@ -46,7 +47,7 @@ def main():
     ref = json.loads(Path(args.reference).read_text())
     end = max(r["onset"] for r in ref) + 0.5
     groups = groups_of(ref)
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = pick_device(args.device)
     feat = compute_cqt(load_audio(args.audio))
     print(f"reference: {len(ref)} notes; groups: {sum(len(g) == 1 for g in groups)} single, {sum(len(g) == 2 for g in groups)} "
           f"of 2, {sum(len(g) >= 3 for g in groups)} of 3+")

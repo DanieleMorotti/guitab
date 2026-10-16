@@ -14,19 +14,13 @@ import argparse
 import json
 from pathlib import Path
 
-import torch
 
+from .device import DEVICES, pick_device
 from .fingering import FINGERING_PRESETS
 from .gp5 import write_gp5
 from .inference import apply_capo, transcribe_file
 from .paths import DEFAULT_CHECKPOINT
 from .tab import BeatGrid, detect_beats, notes_to_tokens
-
-
-def resolve_device(name):
-    if name != "auto":
-        return name
-    return "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 
 def main():
@@ -53,12 +47,12 @@ def main():
     parser.add_argument("--capo", type=int, default=0,
                         help="capo fret: no notes below it, tab frets written relative to it, capo set in the .gp5 (D6).")
     parser.add_argument("--grid", type=int, default=240, help="Quantization grid in ticks (960 = quarter; 240 = 16th).")
-    parser.add_argument("--device", default="auto")
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--name", default=None, help="Output file stem (default: audio file stem).")
     args = parser.parse_args()
 
     audio_path = Path(args.audio).resolve()
-    device = resolve_device(args.device)
+    device = str(pick_device(args.device))
     params = json.loads(args.params) if args.params else {}
     if args.onset is not None:
         params["onset"] = args.onset

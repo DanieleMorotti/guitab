@@ -11,10 +11,10 @@ import argparse
 import sys
 from pathlib import Path
 
-import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.device import DEVICES, empty_cache, pick_device  # noqa: E402
 from guitab.data import load_split  # noqa: E402
 from guitab.evaluation import evaluate_gaps, gaps_ref  # noqa: E402
 from guitab.inference import load_model  # noqa: E402
@@ -22,11 +22,12 @@ from guitab.inference import load_model  # noqa: E402
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--checkpoints", nargs="+", required=True)
     parser.add_argument("--split", default="gaps_test")
     parser.add_argument("--variant", default=None, help='"deg": score the held-out degraded copies (robustness)')
     args = parser.parse_args()
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = pick_device(args.device)
     data = load_split(args.split, variant=args.variant)
     refs = {tr["name"]: gaps_ref(tr["labels"]) for tr in data}
     print(f"{args.split}: {len(data)} pieces, {sum(len(r) for r in refs.values())} notes")
@@ -35,7 +36,7 @@ def main():
         pitch_f1, agree = evaluate_gaps(model, data, device, refs)
         print(f"{ckpt}: pitch F1 {pitch_f1:.4f}, string agreement {agree:.4f}", flush=True)
         del model
-        torch.mps.empty_cache()
+        empty_cache(device)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.device import DEVICES, pick_device  # noqa: E402
 from guitab.paths import DATA, TABLM_CHECKPOINT  # noqa: E402
 from guitab.custom_data import SELECTION  # noqa: E402
 from guitab.synthtab import LABEL_ZIP  # noqa: E402
@@ -96,7 +97,7 @@ def batches(arr, bs, rng):
 
 def cmd_train(args):
     tr, va = np.load(CORPUS / "train.npy"), np.load(CORPUS / "val.npy")
-    dev = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    dev = pick_device(args.device)
     torch.manual_seed(0)
     rng = np.random.default_rng(0)
     model = TabLM().to(dev)
@@ -127,6 +128,7 @@ def cmd_train(args):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("step", choices=["corpus", "train"])
     parser.add_argument("--steps", type=int, default=8000)
     args = parser.parse_args()

@@ -35,8 +35,8 @@ uv pip install --python .venv/bin/python -e . --no-deps          # the `guitab` 
 ```
 (`pip install -e ".[train]"` works too; `requirements.txt` pins the environment the results were produced with.)
 
-On a Mac everything runs on the Apple GPU (MPS); CUDA and CPU work as well. The Beat This! beat-tracker weights are
-downloaded on first use.
+Every command takes `--device auto|cuda|mps|cpu`; `auto` (default) uses an NVIDIA GPU if present, else the Apple GPU,
+else the CPU. The Beat This! beat-tracker weights are downloaded on first use.
 
 **Model weights are not distributed.** Train a model first (section 4); `guitab` uses `runs/tabmodel_mid_all/best.pt`
 unless you pass `--checkpoint`.
@@ -129,10 +129,11 @@ nohup experiments/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19, t
 grep EVAL runs/tabmodel_mid_all.log                                      # validation every 1000 steps
 .venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
 ```
-- `scripts/train.py` options: `--size mid|large`, `--steps`, `--batch`, `--lr`, `--accum` (gradient accumulation);
+- `scripts/train.py` options: `--device`, `--max_memory`, `--size mid|large`, `--steps`, `--batch`, `--lr`, `--accum` (gradient accumulation);
   data shares `--gaps_share`, `--synth_share`, `--ss_share` and their string-label weights `--*_tab_weight`; audio
   augmentation `--aug_copies`, `--aug_share`; `--init` (fine-tune from a checkpoint); `--eval_degraded`.
-- The launchers cap GPU memory (`PYTORCH_MPS_HIGH_WATERMARK_RATIO`) and run at low priority so the machine stays usable.
+- The launchers cap GPU memory (`--max_memory 0.35`, a fraction of the GPU memory) and run at low priority so the machine
+  stays usable; `DEVICE=cuda experiments/...` picks the device.
   Re-running a launcher resumes from `last.pt`; `STOP_AT=18:30 experiments/...` stops at the first evaluation after 18:30.
 - Outputs in `runs/<name>/`: `best.pt` (best validation score), `last.pt` (for resuming) and `log.jsonl`.
 

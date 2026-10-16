@@ -14,10 +14,10 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
-import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.device import DEVICES, pick_device  # noqa: E402
 from guitab.audio import FPS  # noqa: E402
 from guitab.data import load_split  # noqa: E402
 from guitab.evaluation import gaps_ref, match, ref_notes  # noqa: E402
@@ -173,10 +173,11 @@ def analyse(items):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--out", default=None, help="write the breakdown as JSON")
     args = parser.parse_args()
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = pick_device(args.device)
     model = load_model(args.checkpoint, device)
     sets = {
         "gs_val": load_split("validation", include_shift=False),

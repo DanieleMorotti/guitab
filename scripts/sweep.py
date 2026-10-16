@@ -17,10 +17,10 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.device import DEVICES, pick_device  # noqa: E402
 from guitab.evaluation import chunk_text, load_chunks, match_f1, ref_notes, token_metrics  # noqa: E402
 from guitab.fingering import FINGERING_PRESETS, refinger_text  # noqa: E402
 from guitab.guitar import OPEN_PITCH, STRINGS  # noqa: E402
@@ -56,10 +56,11 @@ def frame_metrics(tab_probs, labels):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = pick_device(args.device)
     model = load_model(args.checkpoint, device)
 
     splits = {}

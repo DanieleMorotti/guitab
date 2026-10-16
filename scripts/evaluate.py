@@ -11,10 +11,10 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.device import DEVICES, pick_device  # noqa: E402
 from guitab.data import aug_path  # noqa: E402
 from guitab.evaluation import chunk_text, load_chunks, score  # noqa: E402
 from guitab.fingering import refinger_text  # noqa: E402
@@ -24,6 +24,7 @@ from guitab.paths import CACHE  # noqa: E402
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--split", default="test")
     parser.add_argument("--params", default=None, help="JSON note-extraction params")
@@ -31,7 +32,7 @@ def main():
     parser.add_argument("--variant", default=None, help='"deg": score the held-out degraded copies (robustness)')
     args = parser.parse_args()
 
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = pick_device(args.device)
     model = load_model(args.checkpoint, device)
     refs, meta = load_chunks(args.split)
     probs = {}

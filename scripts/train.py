@@ -45,6 +45,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from guitab.device import DEVICES, allocated_gb, empty_cache, limit_memory, pick_device  # noqa: E402
 from guitab.data import load_split  # noqa: E402
 from guitab.evaluation import evaluate_gaps, evaluate_guitarset, gaps_ref, ref_notes  # noqa: E402
 from guitab.guitar import N_CLASSES, N_FRETS  # noqa: E402
@@ -122,6 +123,9 @@ def loss_fn(out, tab, onset, unk, tab_w):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
+    parser.add_argument("--max_memory", type=float, default=None,
+                        help="cap on this process's share of the GPU memory, e.g. 0.35 (keeps the machine usable)")
     parser.add_argument("--out", required=True)
     parser.add_argument("--size", default="mid")
     parser.add_argument("--batch", type=int, default=16)
@@ -148,7 +152,8 @@ def main():
     parser.add_argument("--ss_tab_weight", type=float, default=1.0, help="tab-loss weight of custom-dataset string labels")
     args = parser.parse_args()
 
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = pick_device(args.device)
+    limit_memory(device, args.max_memory)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     rng = random.Random(0)
@@ -230,14 +235,14 @@ def main():
             g["lr"] = lr_at(step)
         opt.zero_grad(set_to_none=True)
         if args.accum == 1:
-            with torch.autocast("mps", dtype=torch.bfloat16, enabled=args.bf16):
+            with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
                 pred = model(x)
             loss, parts = loss_fn(pred, tab, onset, unk, tab_w)
             loss.backward()
         else:  # same batch, forward/backward in args.accum chunks (lower peak memory), gradients averaged
             parts = {}
             for xc, tc, oc, uc, wc in zip(*(v.chunk(args.accum) for v in (x, tab, onset, unk, tab_w))):
-                with torch.autocast("mps", dtype=torch.bfloat16, enabled=args.bf16):
+                with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
                     pred = model(xc)
                 loss, p = loss_fn(pred, tc, oc, uc, wc)
                 (loss / args.accum).backward()
@@ -252,7 +257,7 @@ def main():
             el = time.time() - t0
             msg = {k: round(v / args.log_every, 4) for k, v in run.items()}
             print(f"step {step} {msg} lr {lr_at(step):.2e} {el / (step - start_step):.2f}s/step "
-                  f"mem {torch.mps.current_allocated_memory() / 2**30:.1f}G", flush=True)
+                  f"mem {allocated_gb(device):.1f}G", flush=True)
             log.write(json.dumps({"step": step, **msg}) + "\n")
             log.flush()
             run = {}
@@ -297,7 +302,7 @@ def main():
             print(f"EVAL step {step}: val string/fret F1 {sf:.4f}, pitch F1 {pf:.4f}{extra} (best {best:.4f})", flush=True)
             log.write(json.dumps(rec) + "\n")
             log.flush()
-            torch.mps.empty_cache()
+            empty_cache(device)
             if args.stop_at and dt.datetime.now().strftime("%H:%M") >= args.stop_at:
                 print("stop_at reached, exiting", flush=True)
                 return

@@ -1250,3 +1250,12 @@ Preparing a public GitHub release (code only, MIT; no weights; no custom-dataset
 - **Branch `public`** (single commit, no history): main minus the custom-dataset code/data, the user-song benchmark and the
   E17–E19 launchers; the full notebook is replaced by `docs/HISTORY.md`; default checkpoint = E15 (reproducible from
   public data: E10 → E12 → E15). Checked: identical E15 transcription and test scores, training smoke test.
+
+### Device-neutral code — 2026-10-16
+
+- Every script and the `guitab` command take `--device auto|cuda|mps|cpu` (auto = CUDA, else Apple GPU, else CPU;
+  `guitab/device.py`). Training memory: `--max_memory <fraction>` replaces the `PYTORCH_MPS_*` variables in the launchers
+  (on CUDA `set_per_process_memory_fraction`; on Apple GPUs the high watermark plus a low watermark at 70% of it - the
+  cap alone ran out of memory at batch 16). Launchers take `DEVICE=...`.
+- Verified on this Mac: my_video tokens identical (auto and mps), GuitarSet test and GAPS test identical, CPU
+  transcription runs, training at 1.12 s/step under `--max_memory 0.35`.
