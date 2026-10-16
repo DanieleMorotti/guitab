@@ -43,7 +43,7 @@ def norm(s):
 
 def excluded_titles():
     titles = ["remember me"]
-    for r in csv.DictReader(open(SELECTION)):
+    for r in csv.DictReader(open(SELECTION)) if SELECTION.exists() else []:
         if r["split"] == "ss_validation":
             titles.append(re.sub(r"\(.*?\)", "", r["title"]).strip())
     return [norm(t) for t in titles if len(norm(t)) >= 5]

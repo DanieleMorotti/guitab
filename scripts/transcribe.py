@@ -1,6 +1,6 @@
 """Transcribe a guitar recording of any length to a Guitar Pro (.gp5) tab.
 
-The CQT frame/onset tab model (default checkpoint runs/tabmodel_mid_all/best.pt, E19) predicts notes
+The CQT frame/onset tab model (default checkpoint runs/tabmodel_mid_close/best.pt, E15) predicts notes
 (seconds, string, fret); they are snapped to a grid that follows the beats detected by Beat This!
 (or a fixed --tempo), optionally re-fingered, and written as tab tokens and .gp5.
 

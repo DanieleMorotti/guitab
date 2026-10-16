@@ -12,12 +12,15 @@ written out as a tab.
 3–4 note chords, quiet inner voices and phone recordings in a room are much harder. Use the output as a first draft to
 correct by ear, not as a finished tab.
 
-| Test set | Metric (onset ±50 ms) | Default model (E19) |
-|---|---|---|
-| GuitarSet test (player 05, steel string) | string + fret F1 / pitch F1 | 0.843 / 0.866 |
-| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.640 / 0.721 |
-| GAPS test (classical guitar, unseen players and rooms) | pitch F1 | 0.813 |
-| Fingerstyle covers (19 held-out real recordings, private set) | string + fret F1 | 0.617 |
+| Test set | Metric (onset ±50 ms) | E15 (public data, default) | E19 (+ custom dataset) |
+|---|---|---|---|
+| GuitarSet test (player 05, steel string) | string + fret F1 / pitch F1 | 0.836 / 0.866 | 0.843 / 0.866 |
+| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.650 / 0.735 | 0.640 / 0.721 |
+| GAPS test (classical guitar, unseen players and rooms) | pitch F1 | 0.827 | 0.813 |
+| Real fingerstyle recordings (19 held-out songs of the custom dataset) | string + fret F1 | 0.548 | 0.617 |
+
+E15 is trained on public datasets only and is the default; E19 also used a custom dataset of real fingerstyle
+recordings with aligned tabs, which is not distributed.
 
 The whole research history (every experiment, setting and result, including approaches that did not work) is in
 [`EXPERIMENTS.md`](EXPERIMENTS.md).
@@ -38,8 +41,8 @@ uv pip install --python .venv/bin/python -e . --no-deps          # the `guitab` 
 Every command takes `--device auto|cuda|mps|cpu`; `auto` (default) uses an NVIDIA GPU if present, else the Apple GPU,
 else the CPU. The Beat This! beat-tracker weights are downloaded on first use.
 
-**Model weights are not distributed.** Train a model first (section 4); `guitab` uses `runs/tabmodel_mid_all/best.pt`
-unless you pass `--checkpoint`.
+**Model weights are not distributed.** Train a model first (section 4); `guitab` uses `runs/tabmodel_mid_close/best.pt`
+(E15) unless you pass `--checkpoint`.
 
 ## 2. Transcribe a recording
 
@@ -111,8 +114,8 @@ mkdir -p data/gaps && curl -L -o data/gaps/gaps_v1_no_audio.zip \
 .venv/bin/python scripts/synthtab_fetch.py download   # the songs in data/synthtab/selection.csv (versioned)
 ```
 
-**custom dataset** (private: real fingerstyle recordings labelled with fan-made tabs, personal use only; not part of
-the public release): `scripts/custom_fetch.py search|select|download|label`, see `guitab/custom_data.py`.
+**Custom dataset** (not distributed): real fingerstyle recordings with their tabs aligned to the audio, used by E17–E19.
+The tools that built it are not published; `guitab/custom_data.py` documents the layout training reads from `data/custom/`.
 
 **Feature caches**:
 ```bash
@@ -123,14 +126,17 @@ the public release): `scripts/custom_fetch.py search|select|download|label`, see
 
 ### 4.2 Train
 
-The exact command lines of every training run are in `experiments/` (E8 … E19, described in EXPERIMENTS.md):
+The exact command lines of every training run are in `experiments/` (E8 … E19, described in EXPERIMENTS.md). The default
+model (E15) is trained in three stages, each after the previous one has finished (about 5 h, 3 h and 2 h on an M-series Mac):
 ```bash
-nohup experiments/train_mid_all.sh > runs/tabmodel_mid_all.log 2>&1 &   # E19, the default model (~8 h on an M-series Mac)
-grep EVAL runs/tabmodel_mid_all.log                                      # validation every 1000 steps
+experiments/train_mid_gaps.sh     > runs/tabmodel_mid_gaps.log 2>&1       # E10: GuitarSet + GAPS, from scratch
+experiments/train_mid_gaps_aug.sh > runs/tabmodel_mid_gaps_aug.log 2>&1   # E12: + phone/room audio augmentation
+experiments/train_mid_close.sh    > runs/tabmodel_mid_close.log 2>&1     # E15: + SynthTab, close-mic augmentation
+grep EVAL runs/tabmodel_mid_close.log                                   # validation every 1000 steps
 .venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
 ```
 - `scripts/train.py` options: `--device`, `--max_memory`, `--size mid|large`, `--steps`, `--batch`, `--lr`, `--accum` (gradient accumulation);
-  data shares `--gaps_share`, `--synth_share`, `--ss_share` and their string-label weights `--*_tab_weight`; audio
+  data shares `--gaps_share`, `--synth_share`, `--ss_share` (custom dataset) and their string-label weights `--*_tab_weight`; audio
   augmentation `--aug_copies`, `--aug_share`; `--init` (fine-tune from a checkpoint); `--eval_degraded`.
 - The launchers cap GPU memory (`--max_memory 0.35`, a fraction of the GPU memory) and run at low priority so the machine
   stays usable; `DEVICE=cuda experiments/...` picks the device.
@@ -140,11 +146,11 @@ grep EVAL runs/tabmodel_mid_all.log                                      # valid
 ## 5. Evaluation
 
 ```bash
-.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_all/best.pt --split test             # GuitarSet test
-.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_all/best.pt --split test --variant deg   # degraded copy
-.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_all/best.pt --split validation --tune   # threshold search
-.venv/bin/python scripts/evaluate_gaps.py --checkpoints runs/tabmodel_mid_all/best.pt                    # GAPS test
-.venv/bin/python scripts/sweep.py --checkpoint runs/tabmodel_mid_all/best.pt --out runs/sweep.json       # P/R sweep + frame metrics
+.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_close/best.pt --split test             # GuitarSet test
+.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_close/best.pt --split test --variant deg   # degraded copy
+.venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_close/best.pt --split validation --tune   # threshold search
+.venv/bin/python scripts/evaluate_gaps.py --checkpoints runs/tabmodel_mid_close/best.pt                    # GAPS test
+.venv/bin/python scripts/sweep.py --checkpoint runs/tabmodel_mid_close/best.pt --out runs/sweep.json       # P/R sweep + frame metrics
 ```
 - Choose checkpoints and settings on validation only (GuitarSet player 04, GAPS validation); report test once per model.
 - GuitarSet is scored on the fixed 15 s chunks of `data/eval_chunks.json` (frozen, so results stay comparable).

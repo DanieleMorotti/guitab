@@ -923,7 +923,7 @@ real recordings of dense fingerstyle with exact labels.
 
 ### E17 — Real fingerstyle recordings labelled from reference tabs (`runs/tabmodel_mid_custom`) — DONE, not adopted (candidate)
 
-**Data** (`scripts/custom_fetch.py`, `guitab/custom_data.py`; personal-use research data, audio and labels not versioned):
+**Data** (dataset tools not published; `guitab/custom_data.py`; audio and labels not distributed):
 - **Selected:** 60 reference tabs (50 by Sungha Jung; single acoustic guitar, standard tuning, a synced main video,
   ≥ 20% of attacks in chords). "Remember Me" (the user's benchmark song) excluded. 56 recordings downloaded (yt-dlp).
 - **Labels:** pitches and strings from the tab, timed as follows.
@@ -1132,7 +1132,7 @@ Demos: `out/my_video/my_video_R_large.gp5`, `my_video_R_large_music_lm.gp5`.
 **Why:** E18 showed the model is not capacity-limited (2.8x parameters, ~+1 point). The remaining lever is more real
 labelled audio; the custom dataset is the only source we can scale.
 
-**Data: custom dataset v2** (`scripts/custom_fetch.py`, same selection and labelling rules as E17):
+**Data: custom dataset v2** (same selection and labelling rules as E17):
 - **Search:** the 18 fingerstyle artists plus generic terms (Fingerstyle, Acoustic Fingerstyle, Fingerpicking, Acoustic,
   Guitar Cover, Solo Guitar, Arrangement), paginated: 424 → 2541 candidates (single acoustic track, standard tuning).
 - **Select:** now append-only (the first 60 songs and their splits are unchanged); AI-generated tabs skipped (none among the
@@ -1180,7 +1180,7 @@ while guitarists read them relative to the capo.
   "Time in a Bottle" .476 → .794, "Married Life" .366 → .600, "Kamado Tanjiro" .417 → .585.
 - Few notes are dropped (at most 31 of 1929 on one song).
 - Demo (capo 5): `out/capo_demo/time_in_a_bottle_no_capo.gp5` vs `time_in_a_bottle_capo5.gp5`, and the original tab
-  `time_in_a_bottle_ORIGINAL_tab.gp5` (new `custom_fetch.py export --song ID --out X.gp5`); the first 8 notes of the
+  `time_in_a_bottle_ORIGINAL_tab.gp5` (exported from the reference tab); the first 8 notes of the
   capo version match the reference tab exactly (string and relative fret).
 - Without `--capo`, the my_video tokens and .gp5 are byte-identical to before.
 - Not done: automatic capo detection (would need the capo guessed from the audio or the predictions).
@@ -1247,9 +1247,7 @@ Preparing a public GitHub release (code only, MIT; no weights; no custom-dataset
 - `match()` moved into `guitab.evaluation`; experiment launchers moved to `experiments/`; `pyproject.toml` with a
   `guitab` command (core vs `[train]` dependencies); ruff F/E/W/B clean; MIT `LICENSE`; README rewritten for outsiders;
   proxy certificates used only when present.
-- **Branch `public`** (single commit, no history): main minus the custom-dataset code/data, the user-song benchmark and the
-  E17–E19 launchers; the full notebook is replaced by `docs/HISTORY.md`; default checkpoint = E15 (reproducible from
-  public data: E10 → E12 → E15). Checked: identical E15 transcription and test scores, training smoke test.
+- A public branch was prepared here; the final approach is described in "Public release" below.
 
 ### Device-neutral code — 2026-10-16
 
@@ -1259,3 +1257,11 @@ Preparing a public GitHub release (code only, MIT; no weights; no custom-dataset
   cap alone ran out of memory at batch 16). Launchers take `DEVICE=...`.
 - Verified on this Mac: my_video tokens identical (auto and mps), GuitarSet test and GAPS test identical, CPU
   transcription runs, training at 1.12 s/step under `--max_memory 0.35`.
+
+### Public release — 2026-10-16
+
+- Published history: every commit kept, with the custom dataset's acquisition tools and data files and the copied
+  third-party code (Audio2Tab metrics, DadaGP converter) removed from all of them; older commits therefore do not run
+  standalone (they imported the copied code).
+- Default checkpoint: E15 (`experiments/train_mid_close.sh`), reproducible from public data; E19 needs the custom dataset.
+- `guitab/custom_data.py` keeps only the layout that training reads; `train_tablm.py` works without the custom dataset.
