@@ -25,9 +25,13 @@ train = ["scipy>=1.11", "pedalboard>=0.9", "pretty_midi>=0.2.10", "music21>=9", 
 
 [project.scripts]
 guitab = "guitab.cli:main"
+guitab-app = "guitab.app:main"
 
 [tool.setuptools]
 packages = ["guitab"]
+
+[tool.setuptools.package-data]
+guitab = ["web/*.html"]
 
 [tool.ruff]
 line-length = 125

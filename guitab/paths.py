@@ -15,6 +15,12 @@ BEAT_THIS_CKPT = DATA / "models" / "beat_this-final0.ckpt"
 CERTS = DATA / "certs" / "macos_trusted.pem"
 DEFAULT_CHECKPOINT = RUNS / "tabmodel_mid_close" / "best.pt"  # E15, public data only (experiments/train_mid_close.sh)
 TABLM_CHECKPOINT = RUNS / "tablm" / "tablm.pt"  # tab language model for --music_lm (scripts/train_tablm.py)
+# checkpoints offered by the web app (guitab/app.py), first available = preselected
+MODELS = {
+    "E19": (RUNS / "tabmodel_mid_all" / "best.pt", "E19 · mid model, all data (best on steel-string guitar)"),
+    "E15": (RUNS / "tabmodel_mid_close" / "best.pt", "E15 · mid model, public data only"),
+    "E18": (RUNS / "tabmodel_large_all" / "best.pt", "E18 · large model, most robust to phone/room audio, 2.5x slower"),
+}
 
 
 def resolve(path):

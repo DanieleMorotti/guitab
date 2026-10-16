@@ -12,15 +12,10 @@ Usage:
 
 import argparse
 import json
-from pathlib import Path
 
-
-from .device import DEVICES, pick_device
-from .fingering import FINGERING_PRESETS
-from .gp5 import write_gp5
-from .inference import apply_capo, transcribe_file
+from .device import DEVICES
 from .paths import DEFAULT_CHECKPOINT
-from .tab import BeatGrid, detect_beats, notes_to_tokens
+from .pipeline import transcribe_to_tab
 
 
 def main():
@@ -51,34 +46,17 @@ def main():
     parser.add_argument("--name", default=None, help="Output file stem (default: audio file stem).")
     args = parser.parse_args()
 
-    audio_path = Path(args.audio).resolve()
-    device = str(pick_device(args.device))
     params = json.loads(args.params) if args.params else {}
     if args.onset is not None:
         params["onset"] = args.onset
     if args.orphan:
         params.update(orphan=True, frame=0.5)
     music_lm = {"lam": args.music_lm_weight, "beta": args.music_lm_bonus} if args.music_lm else None
-    notes = apply_capo(transcribe_file(args.checkpoint, audio_path, device, params, music_lm), args.capo)
-    print(f"{len(notes)} notes")
-    if args.tempo != "auto":
-        grid = BeatGrid([], tempo=int(args.tempo))
-    else:
-        beats, downbeats = detect_beats(audio_path, device)
-        grid = BeatGrid(beats, downbeats)
-    print(f"tempo {grid.tempo} bpm, {grid.num_beats}/4")
-
-    weights = None if args.fingering == "model" else FINGERING_PRESETS[args.fingering]
-    stem = args.name or audio_path.stem
-    tokens = notes_to_tokens(notes, grid, stem, args.grid, weights, capo=args.capo)
-    if tokens is None:
-        raise SystemExit("No notes were transcribed.")
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"{stem}.tokens.txt").write_text("\n".join(tokens) + "\n", encoding="utf-8")
-    gp5_path = out_dir / f"{stem}.gp5"
-    write_gp5(tokens, gp5_path, args.capo)
-    print(f"-> {gp5_path}")
+    try:
+        transcribe_to_tab(args.audio, args.out_dir, args.name, args.checkpoint, args.device, params, music_lm, args.capo,
+                          args.tempo, args.fingering, args.grid)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
 
 
 if __name__ == "__main__":

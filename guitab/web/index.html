@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guitab</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
+    --accent: #c2410c; --accent-ink: #ffffff; --accent-soft: #fbe8dd; --ok: #15803d; --err: #b91c1c;
+    --sheet: #ffffff; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151517; --panel: #1f1f22; --ink: #ececee; --muted: #9a9aa2; --line: #333338;
+      --accent: #fb923c; --accent-ink: #1a0f08; --accent-soft: #3a2416; --ok: #4ade80; --err: #f87171;
+      --sheet: #fbfbf9;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
+  header span { color: var(--muted); }
+  main { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; padding: 16px 20px; height: calc(100vh - 54px); }
+  aside { overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  label { display: block; font-size: 13px; margin: 10px 0 4px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row > * { flex: 1; }
+  input[type=text], input[type=number], select { width: 100%; padding: 7px 8px; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--bg); color: var(--ink); font: inherit; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+           padding: 7px 12px; border-radius: 7px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; width: 100%; padding: 10px; }
+  button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+  .seg button { flex: 1; border: 0; border-radius: 0; background: transparent; }
+  .seg button.on { background: var(--accent-soft); color: var(--ink); }
+  .rec { display: flex; align-items: center; gap: 10px; }
+  .rec .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .rec.live .dot { background: #dc2626; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .meter div { height: 100%; width: 0; background: var(--accent); transition: width .08s; }
+  audio { width: 100%; margin-top: 10px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; }
+  .check input { accent-color: var(--accent); width: 16px; height: 16px; }
+  #status { margin-top: 10px; font-size: 13px; min-height: 18px; }
+  #status.err { color: var(--err); } #status.ok { color: var(--ok); }
+  .hist { list-style: none; margin: 0; padding: 0; }
+  .hist li { padding: 7px 8px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .hist li:hover { background: var(--accent-soft); }
+  .hist small { color: var(--muted); white-space: nowrap; }
+  section.viewer { display: flex; flex-direction: column; min-width: 0; background: var(--panel); border: 1px solid var(--line);
+                   border-radius: var(--radius); overflow: hidden; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+  .toolbar select { width: auto; padding: 5px 6px; }
+  #time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 92px; text-align: center; }
+  #title { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+  #viewport { flex: 1; overflow: auto; background: var(--sheet); position: relative; }
+  #at { min-height: 100%; color: #111; }
+  #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+           color: #8a8a8f; padding: 24px; pointer-events: none; }
+  .at-cursor-bar { background: rgba(194, 65, 12, .10); }
+  .at-cursor-beat { background: rgba(194, 65, 12, .75); width: 3px; }
+  .at-highlight * { fill: #c2410c; stroke: #c2410c; }
+  .at-selection div { background: rgba(194, 65, 12, .12); }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    section.viewer { height: 75vh; }
+  }
+</style>
+</head>
+<body>
+<header><h1>guitab</h1><span>guitar audio → tab</span></header>
+<main>
+  <aside>
+    <div class="card">
+      <h2>Recording</h2>
+      <div class="seg"><button id="srcFile" class="on">Load a file</button><button id="srcMic">Record</button></div>
+      <div id="filePane">
+        <input id="file" type="file" accept="audio/*,video/*">
+        <div class="hint">Any audio or video file (wav, mp3, m4a, mov, ...).</div>
+      </div>
+      <div id="micPane" hidden>
+        <div class="rec" id="rec"><span class="dot"></span><button id="recBtn">Start recording</button><span id="recTime">0:00</span></div>
+        <div class="meter"><div id="level"></div></div>
+        <div class="hint">Recorded without noise suppression or auto gain, so the guitar is captured as it is.</div>
+      </div>
+      <audio id="preview" controls hidden></audio>
+      <label for="name">Name</label>
+      <input id="name" type="text" placeholder="my-song">
+    </div>
+
+    <div class="card">
+      <h2>Settings</h2>
+      <label for="model">Model</label>
+      <select id="model"></select>
+      <div class="row">
+        <div><label for="capo">Capo fret</label><input id="capo" type="number" min="0" max="12" value="0"></div>
+        <div><label for="tempo">Tempo (BPM)</label><input id="tempo" type="number" min="30" max="300" placeholder="auto"></div>
+      </div>
+      <div class="hint">Capo 0 = no capo. Leave tempo empty to follow the detected beats.</div>
+      <label class="check"><input id="lm" type="checkbox"> Fuller chords (tab language model, a bit slower)</label>
+      <label for="onset">Note sensitivity <span id="onsetVal" class="hint"></span></label>
+      <input id="onset" type="range" min="0.3" max="0.8" step="0.05" value="0.6">
+      <div class="hint row"><span>more notes</span><span style="text-align:right">fewer, surer notes</span></div>
+      <div class="row">
+        <div><label for="fingering">Fingering</label>
+          <select id="fingering"><option value="model">As detected</option><option value="auto">Fix awkward shapes</option><option value="low">First position</option></select></div>
+        <div><label for="grid">Rhythm grid</label>
+          <select id="grid"><option value="240">16th notes</option><option value="120">32nd notes</option></select></div>
+      </div>
+      <div style="margin-top:14px"><button id="go" class="primary" disabled>Transcribe</button></div>
+      <div id="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>Tabs</h2>
+      <button id="openGp" style="width:100%">Open a .gp5 / .gp file…</button>
+      <input id="gpFile" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx" hidden>
+      <ul class="hist" id="hist"></ul>
+    </div>
+  </aside>
+
+  <section class="viewer">
+    <div class="toolbar">
+      <button id="play" disabled title="Play / pause (space)">▶ Play</button>
+      <button id="stop" disabled title="Stop">■</button>
+      <span id="time">0:00 / 0:00</span>
+      <select id="speed" title="Playback speed">
+        <option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+      </select>
+      <button id="metro" title="Metronome">Metronome</button>
+      <button id="countin" title="Count-in before playing">Count-in</button>
+      <button id="loop" title="Loop (select a range by dragging over the tab)">Loop</button>
+      <span class="sep"></span>
+      <select id="view" title="What to show"><option value="Tab">Tab</option><option value="ScoreTab">Notation + tab</option></select>
+      <button id="zoomOut" title="Smaller">−</button><button id="zoomIn" title="Larger">+</button>
+      <a id="download" hidden><button>Download .gp5</button></a>
+      <span id="title"></span>
+    </div>
+    <div id="viewport">
+      <div id="at"></div>
+      <div id="empty">Load or record a recording and press Transcribe,<br>or open an existing .gp5 file.<br><br>Click any note to play from there.</div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.min.js"></script>
+<script>
+const CDN = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/";
+const $ = (id) => document.getElementById(id);
+let audioBlob = null, audioName = "";
+
+// ---------- tab viewer (alphaTab) ----------
+const api = new alphaTab.AlphaTabApi($("at"), {
+  core: { fontDirectory: CDN + "font/" },
+  display: { staveProfile: alphaTab.StaveProfile.Tab, scale: 1.0 },
+  player: { playerMode: alphaTab.PlayerMode.EnabledSynthesizer, soundFont: CDN + "soundfont/sonivox.sf2",
+            scrollElement: $("viewport"), enableCursor: true, enableUserInteraction: true },
+});
+const fmt = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+api.playerReady.on(() => { $("play").disabled = false; $("stop").disabled = false; });
+api.playerStateChanged.on((e) => { $("play").textContent = e.state === alphaTab.synth.PlayerState.Playing ? "❚❚ Pause" : "▶ Play"; });
+api.playerPositionChanged.on((e) => { $("time").textContent = `${fmt(e.currentTime)} / ${fmt(e.endTime)}`; });
+api.scoreLoaded.on((score) => { $("empty").hidden = true; $("title").textContent = score.title || ""; });
+api.error.on((e) => setStatus("Viewer error: " + (e.message || e), "err"));
+$("play").onclick = () => api.playPause();
+$("stop").onclick = () => api.stop();
+$("speed").onchange = (e) => { api.playbackSpeed = parseFloat(e.target.value); };
+const toggle = (btn, apply) => { btn.onclick = () => { btn.classList.toggle("on"); apply(btn.classList.contains("on")); }; };
+toggle($("metro"), (on) => { api.metronomeVolume = on ? 1 : 0; });
+toggle($("countin"), (on) => { api.countInVolume = on ? 1 : 0; });
+toggle($("loop"), (on) => { api.isLooping = on; });
+$("view").onchange = (e) => { api.settings.display.staveProfile = alphaTab.StaveProfile[e.target.value]; api.updateSettings(); api.render(); };
+const zoom = (d) => { api.settings.display.scale = Math.min(2, Math.max(0.5, api.settings.display.scale + d)); api.updateSettings(); api.render(); };
+$("zoomIn").onclick = () => zoom(0.1); $("zoomOut").onclick = () => zoom(-0.1);
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && !["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(document.activeElement.tagName) && !$("play").disabled) {
+    e.preventDefault(); api.playPause();
+  }
+});
+async function showTab(url, name) {
+  const buf = await (await fetch(url)).arrayBuffer();
+  api.load(new Uint8Array(buf));
+  $("download").hidden = false; $("download").href = url; $("download").download = (name || "tab") + ".gp5";
+}
+$("openGp").onclick = () => $("gpFile").click();
+$("gpFile").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  api.load(new Uint8Array(await f.arrayBuffer()));
+  $("download").hidden = true;
+};
+
+// ---------- recording source ----------
+function pickSource(mic) {
+  $("srcFile").classList.toggle("on", !mic); $("srcMic").classList.toggle("on", mic);
+  $("filePane").hidden = mic; $("micPane").hidden = !mic;
+}
+$("srcFile").onclick = () => pickSource(false);
+$("srcMic").onclick = () => pickSource(true);
+function setAudio(blob, filename) {
+  audioBlob = blob; audioName = filename;
+  $("preview").src = URL.createObjectURL(blob); $("preview").hidden = false;
+  if (!$("name").value) $("name").value = filename.replace(/\.[^.]+$/, "");
+  $("go").disabled = !$("model").value;
+}
+$("file").onchange = (e) => { const f = e.target.files[0]; if (f) setAudio(f, f.name); };
+
+let recorder = null, recTimer = null, meterRaf = null, stream = null;
+$("recBtn").onclick = async () => {
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (err) { setStatus("Microphone not available: " + err.message, "err"); return; }
+  const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+  recorder = new MediaRecorder(stream, type ? { mimeType: type } : {});
+  const chunks = [];
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    clearInterval(recTimer); cancelAnimationFrame(meterRaf); $("level").style.width = "0";
+    $("rec").classList.remove("live"); $("recBtn").textContent = "Record again";
+    const ext = recorder.mimeType.includes("mp4") ? ".m4a" : ".webm";
+    const stamp = new Date().toTimeString().slice(0, 5).replace(":", "");
+    setAudio(new Blob(chunks, { type: recorder.mimeType }), `recording-${stamp}${ext}`);
+  };
+  const ctx = new AudioContext(), analyser = ctx.createAnalyser();
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const data = new Uint8Array(analyser.fftSize);
+  const meter = () => {
+    analyser.getByteTimeDomainData(data);
+    const peak = Math.max(...data.map((v) => Math.abs(v - 128))) / 128;
+    $("level").style.width = Math.min(100, peak * 140) + "%";
+    meterRaf = requestAnimationFrame(meter);
+  };
+  meter();
+  const t0 = Date.now();
+  recTimer = setInterval(() => { $("recTime").textContent = fmt(Date.now() - t0); }, 250);
+  recorder.start();
+  $("rec").classList.add("live"); $("recBtn").textContent = "Stop";
+};
+
+// ---------- settings and transcription ----------
+$("onset").oninput = (e) => { $("onsetVal").textContent = "(" + e.target.value + ")"; };
+$("onset").oninput({ target: $("onset") });
+function setStatus(msg, cls = "") { $("status").textContent = msg; $("status").className = cls; }
+
+async function loadModels() {
+  const models = await (await fetch("/api/models")).json();
+  $("model").innerHTML = models.map((m) => `<option value="${m.id}">${m.label}</option>`).join("");
+}
+async function loadHistory() {
+  const runs = await (await fetch("/api/history")).json();
+  $("hist").innerHTML = runs.map((r, i) => `<li data-i="${i}"><span>${r.name}</span><small>${r.model}${r.capo ? " · capo " + r.capo : ""} · ${r.created.slice(5)}</small></li>`).join("");
+  [...$("hist").children].forEach((li) => { li.onclick = () => { const r = runs[li.dataset.i]; showTab(r.gp5, r.name); }; });
+}
+
+$("go").onclick = async () => {
+  if (!audioBlob) return;
+  const q = new URLSearchParams({
+    model: $("model").value, capo: $("capo").value || "0", tempo: $("tempo").value || "auto",
+    music_lm: $("lm").checked ? "1" : "0", onset: $("onset").value, fingering: $("fingering").value,
+    grid: $("grid").value, name: $("name").value || audioName.replace(/\.[^.]+$/, ""),
+  });
+  $("go").disabled = true;
+  const t0 = Date.now();
+  const tick = setInterval(() => setStatus(`Transcribing… ${Math.round((Date.now() - t0) / 1000)} s`), 500);
+  try {
+    const res = await fetch("/api/transcribe?" + q, { method: "POST", body: audioBlob, headers: { "X-Filename": audioName } });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || res.statusText);
+    clearInterval(tick);
+    setStatus(`${out.notes} notes · ${out.tempo} BPM · ${out.beats_per_measure}/4 · ${out.seconds} s`, "ok");
+    await showTab(out.gp5, out.name);
+    loadHistory();
+  } catch (err) {
+    clearInterval(tick);
+    setStatus(err.message, "err");
+  } finally {
+    $("go").disabled = false;
+  }
+};
+
+loadModels().then(loadHistory);
+</script>
+</body>
+</html>

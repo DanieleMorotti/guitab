@@ -68,6 +68,18 @@ well under a minute and 1–2 GB of GPU memory.
 | `--params JSON` | Note-extraction settings (`DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`. |
 | `--music_lm_weight 0.3` / `--music_lm_bonus 1.0` | Language-model weight and per-note bonus (higher = fuller chords, more false notes). |
 
+### Web app
+
+```bash
+.venv/bin/guitab-app          # opens http://127.0.0.1:8765 in the browser
+```
+Load an audio/video file or record from the microphone, choose the model (any trained checkpoint among E19, E15, E18),
+capo, fuller chords, note sensitivity, fingering, tempo and grid, then **Transcribe**. The tab appears in an
+[alphaTab](https://www.alphatab.net) viewer with playback: play/pause (space), click a note to play from there, speed,
+metronome, count-in, loop, tab only or notation + tab, zoom, download the .gp5. Any existing .gp5 can be opened too.
+Every result is kept in `out/app/` and listed under *Tabs*. The server only listens on this computer; the viewer is
+loaded from a CDN, so the page needs internet.
+
 ## 3. How it works
 
 1. **Features** (`guitab/audio.py`): 22.05 kHz mono → constant-Q spectrogram, 36 bins per octave, 8 octaves, hop 256.
@@ -160,8 +172,8 @@ grep EVAL runs/tabmodel_mid_close.log                                   # valida
 ## 6. Repository layout
 
 ```
-guitab/            the library: audio, model, inference, tablm, tab, fingering, gp5, cli, data, augment,
-                   guitarset, gaps, synthtab, evaluation, paths
+guitab/            the library: audio, model, inference, tablm, tab, fingering, gp5, pipeline, cli, app (+ web/),
+                   device, data, augment, guitarset, gaps, synthtab, custom_data, evaluation, paths
 scripts/           command-line tools: data preparation, caches, training, evaluation
 experiments/       exact launchers of the training runs (see EXPERIMENTS.md)
 data/              datasets and caches (not versioned except eval_chunks.json and the subset selections)
