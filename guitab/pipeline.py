@@ -11,8 +11,8 @@ from .tab import BeatGrid, detect_beats, notes_to_tokens
 
 
 def transcribe_to_tab(audio_path, out_dir, stem=None, checkpoint=DEFAULT_CHECKPOINT, device="auto", params=None,
-                      music_lm=None, capo=0, tempo="auto", fingering="model", grid=240, log=print):
-    """Write <out_dir>/<stem>.gp5 and <stem>.tokens.txt. params: note-extraction settings (inference.DEFAULT_PARAMS keys);
+                      music_lm=None, capo=0, tempo="auto", fingering="model", grid=240, write_tokens=True, log=print):
+    """Write <out_dir>/<stem>.gp5 (and the tab as text tokens, <stem>.tokens.txt, if write_tokens). params: note-extraction settings (inference.DEFAULT_PARAMS keys);
     music_lm: None or tab-LM decoding settings (lam, beta); tempo: "auto" (beat tracking) or BPM; fingering: model / auto /
     low. Returns {"gp5", "tokens", "notes", "tempo", "beats_per_measure"}; raises ValueError if no note was found."""
     audio_path = Path(audio_path).resolve()
@@ -32,8 +32,9 @@ def transcribe_to_tab(audio_path, out_dir, stem=None, checkpoint=DEFAULT_CHECKPO
         raise ValueError("No notes were transcribed.")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    tokens_path = out_dir / f"{stem}.tokens.txt"
-    tokens_path.write_text("\n".join(tokens) + "\n", encoding="utf-8")
+    tokens_path = out_dir / f"{stem}.tokens.txt" if write_tokens else None
+    if write_tokens:
+        tokens_path.write_text("\n".join(tokens) + "\n", encoding="utf-8")
     gp5_path = out_dir / f"{stem}.gp5"
     write_gp5(tokens, gp5_path, capo)
     log(f"-> {gp5_path}")

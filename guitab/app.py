@@ -4,7 +4,8 @@
 
 The page (guitab/web/index.html) sends the audio and the options to POST /api/transcribe; the server converts the audio
 with ffmpeg, runs the same pipeline as the `guitab` command (guitab/pipeline.py) and keeps every result in
-out/app/<time>_<name>/ (input, .gp5, tokens, settings). The tab viewer and player is alphaTab (loaded from a CDN).
+out/app/<time>_<name>/: audio.wav (the converted audio), <name>.gp5 and result.json (settings and summary). DELETE
+/api/tabs/<id> removes one. The tab viewer and player is alphaTab (loaded from a CDN).
 Only listens on 127.0.0.1; one transcription runs at a time.
 """
 
@@ -100,6 +101,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, f.read_bytes(), ctype)
         self.send(404, {"error": "not found"})
 
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        run = (OUT / path[len("/api/tabs/"):]).resolve() if path.startswith("/api/tabs/") else None
+        if not run or run.parent != OUT.resolve() or not (run / "result.json").is_file():
+            return self.send(404, {"error": "not found"})
+        shutil.rmtree(run)
+        self.send(200, {"deleted": run.name})
+
     def do_POST(self):
         url = urlparse(self.path)
         if url.path != "/api/transcribe":
@@ -122,6 +131,7 @@ class Handler(BaseHTTPRequestHandler):
         except subprocess.CalledProcessError as e:
             shutil.rmtree(run)
             return self.send(400, {"error": "could not read the audio: " + e.stderr.decode(errors="replace")[-300:]})
+        src.unlink()  # audio.wav is enough to transcribe again
         from .pipeline import transcribe_to_tab  # torch and the models load on the first request
 
         t0 = time.time()
@@ -131,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 res = transcribe_to_tab(wav, run, opt["name"], MODELS[opt["model"]][0], self.device, opt["params"],
                                         opt["music_lm"], opt["capo"], opt["tempo"], opt["fingering"], opt["grid"],
-                                        log=lambda m: print("   " + m, flush=True))
+                                        write_tokens=False, log=lambda m: print("   " + m, flush=True))
         except ValueError as e:
             shutil.rmtree(run)
             return self.send(422, {"error": str(e)})
@@ -141,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
         result = {"id": run.name, "name": opt["name"], "model": opt["model"], "capo": opt["capo"],
                   "music_lm": bool(opt["music_lm"]), "notes": res["notes"], "tempo": res["tempo"],
                   "beats_per_measure": res["beats_per_measure"], "seconds": round(time.time() - t0, 1),
-                  "gp5": f"/files/{run.name}/{res['gp5'].name}", "tokens": f"/files/{run.name}/{res['tokens'].name}",
+                  "gp5": f"/files/{run.name}/{res['gp5'].name}",
                   "created": f"{datetime.now():%Y-%m-%d %H:%M}"}
         (run / "result.json").write_text(json.dumps(result, indent=1))
         self.send(200, result)
