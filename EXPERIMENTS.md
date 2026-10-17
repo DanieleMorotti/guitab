@@ -1265,3 +1265,40 @@ Preparing a public GitHub release (code only, MIT; no weights; no custom-dataset
   standalone (they imported the copied code).
 - Default checkpoint: E15 (`experiments/train_mid_close.sh`), reproducible from public data; E19 needs the custom dataset.
 - `guitab/custom_data.py` keeps only the layout that training reads; `train_tablm.py` works without the custom dataset.
+
+### Light models (branch `light-models`) — 2026-10-17
+
+Question: how much of the 24M mid model is needed? The transformer is 18.9M of it (plus a 2.1M position table); the
+CNN front end 1.15M. Each variant uses E19's recipe unchanged (from scratch, all data, 24k steps,
+`experiments/train_light_all.sh SIZE=...`) and is compared with E19 by the paired per-recording test. Run one at a time.
+`build_model(size)` in `guitab/model.py`; E15 and E19 transcriptions verified byte-identical before/after the change.
+
+| Size | Time model | Params | Train step (MPS, batch 16) | Inference per 5 s window |
+|---|---|---|---|---|
+| mid (E19) | 6-layer transformer, 512 wide | 23.8M | 1.09 s | 39 ms |
+| small (E20) | 4-layer transformer, 256 wide (same CNN) | 6.2M | 0.69 s | 16 ms |
+| gru (E21) | 2-layer bidirectional GRU, 256 units (same CNN) | 4.0M | 0.88 s | 139 ms |
+| tcn (E22) | 8 residual dilated convolutions (dilation 1..128, +-3 s; same CNN) | 3.6M | 0.62 s | 12 ms |
+| tiny (E23) | TinyTabModel: pitch-axis CNN shared across pitches, per-string 20-semitone fret windows | 0.105M | 0.61 s | 7 ms |
+
+Expectations: small and gru within ~1 point of E19; tcn similar or slightly lower; tiny several points lower on
+string/fret, closer on pitch.
+
+#### E20 — small transformer (`runs/tabmodel_small_all`) — 2026-10-17: matches E19 except clean GuitarSet (-1 point)
+
+- 24k steps at 0.72 s/step (~5 h); selected checkpoint step 18000 (selection .7665). Validation curves tracked E19
+  within ~1-2 points at every eval from step 3000; degraded GAPS pitch stayed ~2-3 points lower from step 16000.
+- Paired per-recording comparison (best.pt, onset +-50 ms, Wilcoxon signed-rank):
+
+| Set (recordings) | E15 | E19 | E20 | E20 vs E19 | E20 vs E15 |
+|---|---|---|---|---|---|
+| GuitarSet test, string+fret (60) | .887 | **.899** | .888 | wins 21/60, -.010, p=.029 | wins 27/60, +.001, p=.95 |
+| GuitarSet test phone/room, string+fret (60) | .724 | .736 | **.737** | wins 24/60, +.000, p=.42 | wins 33/60, +.013, p=.31 |
+| GAPS test (classical), pitch (19) | **.827** | .813 | .808 | wins 8/19, -.004, p=.28 | wins 2/19, -.018, p=.002 |
+| custom-dataset held-out, string+fret (19) | .548 | **.617** | .611 | wins 10/19, -.005, p=.62 | wins 15/19, +.063, p=.001 |
+
+- Model time over all four sets (predict only, MPS): E19 138 s, E20 57 s (2.4x faster); 6.2M vs 23.8M parameters.
+
+**Conclusion:** at a quarter of the parameters and 2.4x the speed, E20 is not significantly different from E19 on degraded
+GuitarSet, GAPS and the custom held-out set; it loses ~1 point on clean GuitarSet (significant, p=.03). The 19M transformer
+buys about one point on clean audio. Not adopted (yet): kept as the light candidate until the GRU / TCN / tiny runs.

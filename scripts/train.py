@@ -50,7 +50,7 @@ from guitab.data import load_split  # noqa: E402
 from guitab.evaluation import evaluate_gaps, evaluate_guitarset, gaps_ref, ref_notes  # noqa: E402
 from guitab.guitar import N_CLASSES, N_FRETS  # noqa: E402
 from guitab.guitarset import jams_path  # noqa: E402
-from guitab.model import TabModel, count_params, pitch_targets  # noqa: E402
+from guitab.model import SIZES, build_model, count_params, pitch_targets  # noqa: E402
 
 
 def sample_batch(pools, batch, length, augment, rng, tab_weights, aug_share=0.0):
@@ -127,7 +127,7 @@ def main():
     parser.add_argument("--max_memory", type=float, default=None,
                         help="cap on this process's share of the GPU memory, e.g. 0.35 (keeps the machine usable)")
     parser.add_argument("--out", required=True)
-    parser.add_argument("--size", default="mid")
+    parser.add_argument("--size", default="mid", choices=SIZES)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--length", type=int, default=432, help="frames per crop (432 = 5 s)")
     parser.add_argument("--steps", type=int, default=20000)
@@ -197,7 +197,7 @@ def main():
         val_deg = load_split("validation", include_shift=False, variant="deg")
         gaps_val_deg = load_split("gaps_validation", variant="deg") if gaps_val else []
 
-    model = TabModel(args.size)
+    model = build_model(args.size)
     if args.init:
         model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=False)["model"])
         print(f"initialised from {args.init}", flush=True)

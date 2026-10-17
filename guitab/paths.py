@@ -20,6 +20,7 @@ MODELS = {
     "E19": (RUNS / "tabmodel_mid_all" / "best.pt", "E19 · mid model, all data (best on steel-string guitar)"),
     "E15": (RUNS / "tabmodel_mid_close" / "best.pt", "E15 · mid model, public data only"),
     "E18": (RUNS / "tabmodel_large_all" / "best.pt", "E18 · large model, most robust to phone/room audio, 2.5x slower"),
+    "E20": (RUNS / "tabmodel_small_all" / "best.pt", "E20 · small model (6M), all data, 2.4x faster, ~1 point below E19 on clean audio"),
 }
 
 

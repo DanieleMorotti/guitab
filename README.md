@@ -73,7 +73,7 @@ well under a minute and 1–2 GB of GPU memory.
 ```bash
 .venv/bin/guitab-app          # opens http://127.0.0.1:8765 in the browser
 ```
-Load an audio/video file or record from the microphone, choose the model (any trained checkpoint among E19, E15, E18),
+Load an audio/video file or record from the microphone, choose the model (any trained checkpoint among E19, E15, E18, E20),
 capo, fuller chords, note sensitivity, fingering, tempo and grid, then **Transcribe**. The tab appears in an
 [alphaTab](https://www.alphatab.net) viewer with playback: play/pause (space), click a note to play from there, speed,
 metronome, count-in, loop, tab only or notation + tab, zoom, download the .gp5. Any existing .gp5 can be opened too.

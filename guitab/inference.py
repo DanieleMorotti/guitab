@@ -19,7 +19,7 @@ import torch
 
 from .audio import FPS, compute_cqt, load_audio
 from .guitar import OPEN_PITCH, STRINGS
-from .model import TabModel
+from .model import build_model
 
 # tuned on GuitarSet validation (player 04) with scripts/evaluate.py --tune
 DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orphan": False, "fret_frames": 3, "dedup": 4,
@@ -28,7 +28,7 @@ DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orp
 
 def load_model(checkpoint, device):
     ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    model = TabModel(ckpt["size"])
+    model = build_model(ckpt["size"])
     model.load_state_dict(ckpt["model"])
     return model.to(device).eval()
 
