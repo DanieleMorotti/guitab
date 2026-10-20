@@ -1302,3 +1302,71 @@ string/fret, closer on pitch.
 **Conclusion:** at a quarter of the parameters and 2.4x the speed, E20 is not significantly different from E19 on degraded
 GuitarSet, GAPS and the custom held-out set; it loses ~1 point on clean GuitarSet (significant, p=.03). The 19M transformer
 buys about one point on clean audio. Not adopted (yet): kept as the light candidate until the GRU / TCN / tiny runs.
+
+#### E21 — bidirectional GRU (`--size gru`) — 2026-10-19: stopped at step 18000, level on public data, behind on steel-string, slower
+
+- Same recipe as E19/E20 (`SIZE=gru experiments/train_light_all.sh`). 1.2 s/step excluding evals (a Teams video call
+  shared the GPU), vs 0.72 s for E20.
+- Evals were taking ~11 min each: `predict` ran one 432-frame window at a time, and the GRU has to step through the
+  frames in order. `predict` now runs 16 windows per forward pass (identical probabilities and metrics for every size;
+  GRU eval 467 s -> 73 s, E19 100 s -> 45 s, E20 55 s -> 32 s). Training resumed from step 4000 with the fix.
+- Validation at the same steps (string/fret F1 unless noted):
+
+| Step | clean val | clean val pitch | degraded val | GAPS pitch | GAPS string agree | custom val | SynthTab val |
+|---|---|---|---|---|---|---|---|
+| 3000 E21 / E19 / E20 | .707 / .628 / .625 | .801 / .773 / .767 | .539 / .521 / .512 | .811 / .785 / .784 | .793 / .777 / .780 | .532 / .519 / .491 | .855 / .825 / .828 |
+| 8000 | .790 / .783 / .785 | .830 / .826 / .826 | .608 / .588 / .590 | .864 / .855 / .844 | .850 / .829 / .825 | .596 / .597 / .584 | .885 / .856 / .857 |
+| 13000 | .804 / .811 / .817 | .844 / .842 / .838 | .611 / .626 / .632 | .885 / .870 / .867 | .849 / .865 / .854 | .589 / .597 / .604 | .906 / .892 / .883 |
+| 18000 | .815 / .818 / .817 | .844 / .847 / .844 | .657 / .627 / .646 | .881 / .885 / .879 | .862 / .864 / .865 | .601 / .617 / .611 | .906 / .915 / .907 |
+
+- The GRU learns faster early (ahead by 4-8 points up to step 3000), is level with the transformers from step ~5000 on
+  the public sets, and stays flat on the custom validation set (.586-.604 from step 11000) while E19 reaches .617.
+
+**Conclusion:** no better than the transformers (level on GuitarSet/GAPS/SynthTab, ~1.5-3 points lower on steel-string)
+and not lighter where it matters: fewer parameters (4.0M) but slower to train and ~9x slower per window at inference
+(sequential recurrence; also poorly supported by the browser backends). Stopped at step 18000 to save time; run deleted,
+no test-set evaluation.
+
+#### E22 — dilated TCN (`--size tcn`) — 2026-10-19: stopped at step 10000, 3-14 points below the transformers
+
+- Same recipe (`SIZE=tcn experiments/train_light_all.sh`). 0.63 s/step alone; from step 1000 it shared the GPU with
+  E23 (tiny): 0.88 s/step for the TCN, 1.38 s/step for tiny (~14% more total throughput than running them in sequence).
+- Validation at the same steps (string/fret F1 unless noted), E22 / E19 / E20:
+
+| Step | clean val | clean val pitch | degraded val | GAPS pitch | GAPS string agree | custom val | SynthTab val |
+|---|---|---|---|---|---|---|---|
+| 3000 | .680 / .628 / .625 | .782 / .773 / .767 | .532 / .521 / .512 | .761 / .785 / .784 | .772 / .777 / .780 | .492 / .519 / .491 | .808 / .825 / .828 |
+| 6000 | .712 / .755 / .742 | .796 / .822 / .814 | .524 / .526 / .551 | .794 / .840 / .841 | .816 / .827 / .833 | .529 / .579 / .572 | .839 / .856 / .856 |
+| 8000 | .754 / .783 / .785 | .800 / .826 / .826 | .523 / .588 / .590 | .794 / .855 / .844 | .812 / .829 / .825 | .538 / .597 / .584 | .852 / .856 / .857 |
+| 10000 | .761 / .793 / .795 | .809 / .837 / .831 | .482 / .621 / .606 | .774 / .874 / .853 | .844 / .849 / .847 | .527 / .595 / .581 | .863 / .879 / .887 |
+
+- Ahead only at step 3000; from step 4000 behind everywhere except GAPS string agreement, and flat from step 8000
+  (clean .754-.763, custom .525-.541) while the transformers kept improving. Weakest on degraded audio and GAPS pitch.
+
+**Conclusion:** the fixed +-3 s dilated-convolution context is clearly worse than attention (or the GRU) here: ~3 points
+lower on clean GuitarSet, ~5-7 on steel-string, ~8-14 on degraded audio and GAPS pitch, for a small inference gain (12 vs
+16 ms per window for E20). Stopped at step 10000; no test-set evaluation.
+
+#### E23 — tiny pitch-axis model (`--size tiny`, 0.105M params) — 2026-10-19: stopped at step 12000, pitch level, string/fret ~11-13 points lower
+
+- Same recipe (`SIZE=tiny experiments/train_light_all.sh`). Shared the GPU with E22 up to step ~5500 (1.38 s/step), alone
+  afterwards.
+- Validation at the same steps (string/fret F1 unless noted), E23 / E19 / E20:
+
+| Step | clean val | clean val pitch | degraded val | GAPS pitch | GAPS string agree | custom val | SynthTab val |
+|---|---|---|---|---|---|---|---|
+| 3000 | .601 / .628 / .625 | .797 / .773 / .767 | .356 / .521 / .512 | .743 / .785 / .784 | .763 / .777 / .780 | .460 / .519 / .491 | .778 / .825 / .828 |
+| 6000 | .630 / .755 / .742 | .799 / .822 / .814 | .336 / .526 / .551 | .758 / .840 / .841 | .779 / .827 / .833 | .501 / .579 / .572 | .807 / .856 / .856 |
+| 9000 | .689 / .783 / .781 | .822 / .828 / .822 | .396 / .552 / .507 | .790 / .869 / .848 | .786 / .843 / .854 | .521 / .581 / .570 | .828 / .885 / .884 |
+| 12000 | .682 / .807 / .808 | .819 / .837 / .834 | .428 / .616 / .602 | .766 / .879 / .873 | .794 / .848 / .846 | .515 / .605 / .601 | .836 / .906 / .901 |
+
+- Clean pitch stays within ~1-2 points of the transformers throughout (best at step 3000, ahead by ~2.5); string/fret
+  stalls around .65-.69 on clean GuitarSet and .50-.53 on the custom set from step 8000, degraded audio around .40-.43.
+
+**Conclusion:** the pitch-equivariant front end with 0.1M parameters detects notes nearly as well as the 6-24M models,
+but choosing the string needs more capacity/context than the per-string 20-semitone fret windows give (~12 points lower
+string/fret on clean GuitarSet, ~9 on steel-string, ~18 on degraded audio). A possible follow-up: this tiny front end
+with a larger string/fret head. Stopped at step 12000; run deleted, no test-set evaluation.
+
+**Light-model summary:** E20 (small transformer, 6.2M) remains the light candidate; GRU (level but slower), TCN (3-14
+points lower) and tiny (string/fret ~12 points lower) are not worth pursuing as tab models.

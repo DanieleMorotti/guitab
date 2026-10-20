@@ -34,8 +34,9 @@ def load_model(checkpoint, device):
 
 
 @torch.no_grad()
-def predict(model, feat, device, win=432, hop=288):
-    """feat [T, 288] -> (tab_probs [T, 6, 21], onset_probs [T, 6]) with overlapping windows."""
+def predict(model, feat, device, win=432, hop=288, batch=16):
+    """feat [T, 288] -> (tab_probs [T, 6, 21], onset_probs [T, 6]) with overlapping windows, `batch` windows per forward
+    pass (all windows have the same length)."""
     t_total = len(feat)
     tab = np.zeros((t_total, 6, model.n_classes), dtype=np.float32)
     onset = np.zeros((t_total, 6), dtype=np.float32)
@@ -44,14 +45,18 @@ def predict(model, feat, device, win=432, hop=288):
     if starts[-1] + win < t_total:
         starts.append(t_total - win)
     taper = np.hanning(win + 2)[1:-1].astype(np.float32)[:, None] + 1e-3
-    for s in starts:
-        x = torch.from_numpy(np.asarray(feat[s:s + win], dtype=np.float32))[None].to(device)
+    for b in range(0, len(starts), batch):
+        group = starts[b:b + batch]
+        x = torch.from_numpy(np.stack([np.asarray(feat[s:s + win], dtype=np.float32) for s in group])).to(device)
         out = model(x)
+        tab_b = torch.softmax(out["tab"].float(), -1).cpu().numpy()
+        onset_b = torch.sigmoid(out["onset"].float()).cpu().numpy()
         n = x.shape[1]
         w = taper[:n]
-        tab[s:s + n] += torch.softmax(out["tab"][0].float(), -1).cpu().numpy() * w[:, :, None]
-        onset[s:s + n] += torch.sigmoid(out["onset"][0].float()).cpu().numpy() * w
-        weight[s:s + n] += w
+        for i, s in enumerate(group):
+            tab[s:s + n] += tab_b[i] * w[:, :, None]
+            onset[s:s + n] += onset_b[i] * w
+            weight[s:s + n] += w
     return tab / weight[:, :, None], onset / weight
 
 
