@@ -18,9 +18,16 @@ correct by ear, not as a finished tab.
 | GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.650 / 0.735 | 0.640 / 0.721 |
 | GAPS test (classical guitar, unseen players and rooms) | pitch F1 | 0.827 | 0.813 |
 | Real fingerstyle recordings (19 held-out songs of the custom dataset) | string + fret F1 | 0.548 | 0.617 |
+| EGDB electric guitar test (25 clips, clean DI; never seen in training) | string + fret F1 / pitch F1 | 0.636 / 0.833 | 0.712 / 0.850 |
+| EGDB electric guitar test, through two amps (clean and crunch) | string + fret F1 / pitch F1 | 0.613 / 0.784 | 0.631 / 0.787 |
 
 E15 is trained on public datasets only and is the default; E19 also used a custom dataset of real fingerstyle
 recordings with aligned tabs, which is not distributed.
+
+**Electric guitar.** The models are trained on acoustic and classical guitar only, but they also work on clean or
+lightly overdriven electric guitar: on the [EGDB](https://ss12f32v.github.io/Guitar-Transcription/) test set (Chen et
+al., ICASSP 2022) the notes are found almost as well as on acoustic recordings, while the string choice is less reliable,
+so expect more fingering corrections. Heavy distortion was not tested.
 
 The whole research history (every experiment, setting and result, including approaches that did not work) is in
 [`EXPERIMENTS.md`](EXPERIMENTS.md).

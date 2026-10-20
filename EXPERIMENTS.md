@@ -1407,3 +1407,26 @@ points, significant, the teachers' average carrying E18's broader public-data sk
 loss on clean GuitarSet (p=.03) and is 1.6 points lower on the custom dataset (p=.09). It needs its own onset threshold
 (.5). Candidate for the browser version (smallest download, fastest), not yet in the app. Next: the same distillation
 into an E20-sized student, expected to reach E19 on GuitarSet / custom dataset at a quarter of its size.
+
+### EGDB electric guitar check (no training) — 2026-10-20
+
+Do the acoustic models transcribe electric guitar? EGDB (Chen et al., "Towards automatic transcription of polyphonic
+electric guitar music: a new dataset and a multi-loss transformer model", ICASSP 2022;
+https://ss12f32v.github.io/Guitar-Transcription/): 240 clips recorded with a hexaphonic pickup, the clean DI signal
+re-rendered through 5 amplifiers, labels as one MIDI track per string. Evaluated: the official test clips 216-240 (25 clips,
+~12 min) as clean DI and through the two test amps (Fender JC Jazz clean, Plexi crunch), plus the 5 real recordings
+(`RealData`, pitch-only labels named `*_pred`, 190 notes). Data in `data/egdb` (not versioned, 378 MB); script kept out
+of the repo (scratch). Onset ±50 ms; string+fret assumes standard tuning (one label note below the open string dropped).
+
+| Set | E15 string+fret / pitch | E19 | E20 | E24 (onset .5) |
+|---|---|---|---|---|
+| EGDB test, clean DI (25) | .636 / .833 | **.712 / .850** | .712 / .839 | .691 / .830 |
+| EGDB test, JC Jazz amp (25) | .618 / .789 | .645 / **.800** | **.656** / .787 | .629 / .783 |
+| EGDB test, Plexi amp (25) | .608 / **.779** | **.616** / .774 | .615 / .764 | .615 / .778 |
+| EGDB real recordings (5), pitch | **.891** | .852 | .857 | .871 |
+
+**Reading:** none of the models has seen an electric guitar, yet pitch F1 is .83-.85 on clean DI (GuitarSet test: .87)
+and ~.78 through amps, and .85-.89 on the 5 real recordings. String choice transfers less well: .64-.71 on clean DI
+(GuitarSet .84-.90), ~.62 through amps: electric necks, lighter strings and amp tone change the timbre cues the string
+decision relies on, and EGDB's rock/pop vocabulary (power chords, bends) differs from fingerstyle. Usable as a first
+draft for electric guitar (clean or crunch), with more string corrections to expect; no high-gain distortion was tested.
