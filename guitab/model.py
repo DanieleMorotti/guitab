@@ -29,6 +29,7 @@ SIZES = {
     "mid": {"chans": (64, 128, 256), "d_model": 512, "layers": 6, "heads": 8},
     "large": {"chans": (96, 192, 384), "d_model": 768, "layers": 8, "heads": 12},
     "small": {"chans": (64, 128, 256), "d_model": 256, "layers": 4, "heads": 4},
+    "half": {"chans": (48, 96, 192), "d_model": 160, "layers": 4, "heads": 4},  # half of small, for distillation (E24)
     "gru": {"chans": (64, 128, 256), "d_model": 256, "layers": 2, "time": "gru", "hidden": 256},
     "tcn": {"chans": (64, 128, 256), "d_model": 256, "layers": 8, "time": "tcn"},  # dilations 1..128: +-255 frames (3 s)
     "tiny": {"chans": 32, "layers": 8},  # TinyTabModel

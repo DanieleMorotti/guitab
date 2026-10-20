@@ -26,6 +26,9 @@ SynthTab (E13): with --synth_share > 0, that share of crops comes from the selec
 string choices are the tab writer's and probably not audible). Validation reports
 SynthTab string/fret and pitch F1 (synth_validation) but the best checkpoint is still chosen on real audio.
 
+Distillation (E24): with --teacher (repeatable), the frozen teachers run on every batch and their averaged tab, onset
+and pitch probabilities become soft targets; the loss is (1 - --distill) * label loss + --distill * soft loss.
+
 Launch through scripts/train_mid*.sh (memory cap, low priority, resume), e.g.
     nohup experiments/train_mid_gaps.sh > runs/tabmodel_mid_gaps.log 2>&1 &
 """
@@ -50,6 +53,7 @@ from guitab.data import load_split  # noqa: E402
 from guitab.evaluation import evaluate_gaps, evaluate_guitarset, gaps_ref, ref_notes  # noqa: E402
 from guitab.guitar import N_CLASSES, N_FRETS  # noqa: E402
 from guitab.guitarset import jams_path  # noqa: E402
+from guitab.inference import load_model  # noqa: E402
 from guitab.model import SIZES, build_model, count_params, pitch_targets  # noqa: E402
 
 
@@ -121,6 +125,23 @@ def loss_fn(out, tab, onset, unk, tab_w):
     return tab_loss + on_loss + 0.5 * pitch_loss, {"tab": tab_loss.item(), "onset": on_loss.item(), "pitch": pitch_loss.item()}
 
 
+@torch.no_grad()
+def teacher_targets(teachers, x):
+    """Averaged teacher probabilities: tab [B, T, 6, 21], onset [B, T, 6], pitch [B, T, 48]."""
+    outs = [t(x) for t in teachers]
+    avg = lambda f: sum(f(o) for o in outs) / len(outs)  # noqa: E731
+    return {"tab": avg(lambda o: torch.softmax(o["tab"].float(), -1)), "onset": avg(lambda o: torch.sigmoid(o["onset"].float())),
+            "pitch": avg(lambda o: torch.sigmoid(o["pitch"].float()))}
+
+
+def distill_loss(out, soft):
+    """Soft cross-entropy on the tab and BCE on onsets and pitches against the teachers' probabilities (every frame)."""
+    tab_loss = -(soft["tab"] * F.log_softmax(out["tab"].float(), -1)).sum(-1).mean()
+    on_loss = F.binary_cross_entropy_with_logits(out["onset"].float(), soft["onset"])
+    pitch_loss = F.binary_cross_entropy_with_logits(out["pitch"].float(), soft["pitch"])
+    return tab_loss + on_loss + 0.5 * pitch_loss, tab_loss.item()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
@@ -150,6 +171,8 @@ def main():
     parser.add_argument("--synth_tab_weight", type=float, default=1.0, help="tab-loss weight of SynthTab string labels")
     parser.add_argument("--ss_share", type=float, default=0.0, help="probability a crop comes from the custom dataset")
     parser.add_argument("--ss_tab_weight", type=float, default=1.0, help="tab-loss weight of custom-dataset string labels")
+    parser.add_argument("--teacher", action="append", default=[], help="teacher checkpoint for distillation (repeatable)")
+    parser.add_argument("--distill", type=float, default=0.5, help="weight of the distillation loss (with --teacher)")
     args = parser.parse_args()
 
     device = pick_device(args.device)
@@ -203,6 +226,9 @@ def main():
         print(f"initialised from {args.init}", flush=True)
     model = model.to(device)
     print(f"model {args.size}: {count_params(model) / 1e6:.1f}M params", flush=True)
+    teachers = [load_model(p, device) for p in args.teacher]
+    for p in args.teacher:
+        print(f"teacher {p}, distillation weight {args.distill}", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
 
     def lr_at(step):
@@ -234,17 +260,26 @@ def main():
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
         opt.zero_grad(set_to_none=True)
+
+        def batch_loss(pred, xc, tc, oc, uc, wc):
+            loss, p = loss_fn(pred, tc, oc, uc, wc)
+            if teachers:
+                kd, kd_tab = distill_loss(pred, teacher_targets(teachers, xc))
+                loss = (1 - args.distill) * loss + args.distill * kd
+                p["kd_tab"] = kd_tab
+            return loss, p
+
         if args.accum == 1:
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
                 pred = model(x)
-            loss, parts = loss_fn(pred, tab, onset, unk, tab_w)
+            loss, parts = batch_loss(pred, x, tab, onset, unk, tab_w)
             loss.backward()
         else:  # same batch, forward/backward in args.accum chunks (lower peak memory), gradients averaged
             parts = {}
             for xc, tc, oc, uc, wc in zip(*(v.chunk(args.accum) for v in (x, tab, onset, unk, tab_w))):
                 with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
                     pred = model(xc)
-                loss, p = loss_fn(pred, tc, oc, uc, wc)
+                loss, p = batch_loss(pred, xc, tc, oc, uc, wc)
                 (loss / args.accum).backward()
                 for k, v in p.items():
                     parts[k] = parts.get(k, 0.0) + v / args.accum

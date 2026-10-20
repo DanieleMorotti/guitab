@@ -1370,3 +1370,40 @@ with a larger string/fret head. Stopped at step 12000; run deleted, no test-set 
 
 **Light-model summary:** E20 (small transformer, 6.2M) remains the light candidate; GRU (level but slower), TCN (3-14
 points lower) and tiny (string/fret ~12 points lower) are not worth pursuing as tab models.
+
+### E24 — Distillation: half-size student (2.9M) taught by the E18 + E19 average (`runs/tabmodel_half_distill`) — 2026-10-20: E20 quality at half the size
+
+**Teacher check (validation, no training):** averaging the tab/onset probabilities of E18 and E19 beats either alone where
+it matters: clean string/fret .823 (E19 .818, E18 .815), degraded .662 (E19 .627, E18 .672), GAPS pitch / agreement
+.888 / .874 (E19 .885 / .864), custom-dataset .612 (E19 .617, E18 .587).
+
+**Setup:**
+- Student `--size half` (`guitab/model.py`): CNN 48/96/192, transformer d_model 160, 4 layers; 2.94M parameters, 10.4 ms
+  per 5 s window on MPS (E20 6.19M / 15.8 ms, E19 23.8M / 39 ms).
+- `scripts/train.py --teacher A --teacher B --distill 0.5`: the frozen teachers run on every (augmented) batch; loss =
+  0.5 x label loss + 0.5 x soft loss (soft cross-entropy on the tab, BCE on onsets and pitches against the averaged teacher
+  probabilities, on every frame). Otherwise E19's recipe (`experiments/train_distill.sh`), 24k steps.
+- 1.5 s/step (the E18 teacher dominates), ~10.5 h. Best checkpoint (selection on the default thresholds): step 23000.
+
+**Calibration:** the student's onset probabilities are lower than its teachers' (soft onset targets spread over
+neighbouring frames, without the label loss's positive weight), so the default onset threshold .6 under-counts notes.
+Its best threshold on validation is ~.45 early and .5 at the end (same on every set); from .6 to .5 at the end: clean
+.815 → .811, degraded .633 → .654, GAPS pitch .871 → .887, custom .597 → .601. E24 is scored with onset .5.
+
+**Paired per-recording comparison** (test sets, onset ±50 ms, Wilcoxon signed-rank; E24 at onset .5):
+
+| Set (recordings) | E19 | E20 | E24 | E24 vs E19 | E24 vs E20 |
+|---|---|---|---|---|---|
+| GuitarSet test, string+fret (60) | **.899** | .888 | .890 | wins 22/60, -.008, p=.028 | wins 26/60, +.002, p=.82 |
+| GuitarSet test phone/room, string+fret (60) | .736 | .737 | **.740** | wins 26/60, +.004, p=.52 | wins 32/60, +.003, p=.17 |
+| GAPS test (classical), pitch (19) | .813 | .808 | **.825** | wins 16/19, +.012, p<.001 | wins 17/19, +.016, p<.001 |
+| custom-dataset held-out, string+fret (19) | **.617** | .611 | .601 | wins 5/19, -.016, p=.09 | wins 7/19, -.010, p=.18 |
+
+Model time over all four sets (predict only, MPS): E19 66 s, E20 41 s, E24 28 s.
+
+**Conclusion:** distillation is worth about a doubling of the model: the 2.9M student matches E20 (6.2M) on GuitarSet
+clean and phone/room and the custom dataset (differences not significant), and beats both E20 and E19 on GAPS (+1.2-1.6
+points, significant, the teachers' average carrying E18's broader public-data skill). Against E19 it keeps the ~1 point
+loss on clean GuitarSet (p=.03) and is 1.6 points lower on the custom dataset (p=.09). It needs its own onset threshold
+(.5). Candidate for the browser version (smallest download, fastest), not yet in the app. Next: the same distillation
+into an E20-sized student, expected to reach E19 on GuitarSet / custom dataset at a quarter of its size.
