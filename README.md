@@ -12,17 +12,19 @@ written out as a tab.
 3–4 note chords, quiet inner voices and phone recordings in a room are much harder. Use the output as a first draft to
 correct by ear, not as a finished tab.
 
-| Test set | Metric (onset ±50 ms) | E15 (public data, default) | E19 (+ custom dataset) |
-|---|---|---|---|
-| GuitarSet test (player 05, steel string) | string + fret F1 / pitch F1 | 0.836 / 0.866 | 0.843 / 0.866 |
-| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.650 / 0.735 | 0.640 / 0.721 |
-| GAPS test (classical guitar, unseen players and rooms) | pitch F1 | 0.827 | 0.813 |
-| Real fingerstyle recordings (19 held-out songs of the custom dataset) | string + fret F1 | 0.548 | 0.617 |
-| EGDB electric guitar test (25 clips, clean DI; never seen in training) | string + fret F1 / pitch F1 | 0.636 / 0.833 | 0.712 / 0.850 |
-| EGDB electric guitar test, through two amps (clean and crunch) | string + fret F1 / pitch F1 | 0.613 / 0.784 | 0.631 / 0.787 |
+| Test set | Metric (onset ±50 ms) | E15 (public data) | E19 (+ custom dataset) | E25 (default) |
+|---|---|---|---|---|
+| GuitarSet test (player 05, steel string) | string + fret F1 / pitch F1 | 0.836 / 0.866 | 0.843 / 0.866 | 0.843 / 0.865 |
+| GuitarSet test, phone/room-degraded copy | string + fret F1 / pitch F1 | 0.650 / 0.735 | 0.640 / 0.721 | 0.680 / 0.750 |
+| GAPS test (classical guitar, unseen players and rooms) | pitch F1 | 0.827 | 0.813 | 0.826 |
+| Real fingerstyle recordings (19 held-out songs of the custom dataset) | string + fret F1 | 0.548 | 0.617 | 0.614 |
+| EGDB electric guitar test (25 clips, clean DI; never seen in training) | string + fret F1 / pitch F1 | 0.636 / 0.833 | 0.712 / 0.850 | 0.721 / 0.845 |
+| EGDB electric guitar test, through two amps (clean and crunch) | string + fret F1 / pitch F1 | 0.613 / 0.784 | 0.631 / 0.787 | 0.656 / 0.791 |
 
-E15 is trained on public datasets only and is the default; E19 also used a custom dataset of real fingerstyle
-recordings with aligned tabs, which is not distributed.
+E15 is trained on public datasets only. E19 also used a custom dataset of real fingerstyle recordings with aligned
+tabs, which is not distributed. E25, the default, is a 6M-parameter model (a quarter of E19) trained to imitate the
+average of E19 and the 66M-parameter E18 (distillation): as good as E19 on clean steel-string audio, better on phone
+recordings and classical guitar, 1.6x faster.
 
 **Electric guitar.** The models are trained on acoustic and classical guitar only, but they also work on clean or
 lightly overdriven electric guitar: on the [EGDB](https://ss12f32v.github.io/Guitar-Transcription/) test set (Chen et
@@ -48,8 +50,9 @@ uv pip install --python .venv/bin/python -e . --no-deps          # the `guitab` 
 Every command takes `--device auto|cuda|mps|cpu`; `auto` (default) uses an NVIDIA GPU if present, else the Apple GPU,
 else the CPU. The Beat This! beat-tracker weights are downloaded on first use.
 
-**Model weights are not distributed.** Train a model first (section 4); `guitab` uses `runs/tabmodel_mid_close/best.pt`
-(E15) unless you pass `--checkpoint`.
+**Model weights are not distributed.** Train a model first (section 4); `guitab` uses E25
+(`runs/tabmodel_small_distill/best.pt`) when it exists, else E15 (`runs/tabmodel_mid_close/best.pt`, public data only),
+unless you pass `--checkpoint`.
 
 ## 2. Transcribe a recording
 
@@ -65,7 +68,7 @@ well under a minute and 1–2 GB of GPU memory.
 |---|---|
 | `--capo 3` | The song is played with a capo at that fret: notes are kept on strings that can play them, frets are written relative to the capo, and the .gp5 has the capo set. |
 | `--music_lm` | Fuller chords: notes are decoded jointly with a small tab language model trained on symbolic tabs. 3–4 note chords come out more complete; overall accuracy changes by about ±1 point; 10–20 s slower. |
-| `--onset 0.4` | Keep less confident notes (default 0.6): more notes, more false ones. Try 0.4–0.5 if notes are missing. |
+| `--onset 0.4` | Keep less confident notes (default: the model's own, 0.5 for E24 / E25, 0.6 for the others): more notes, more false ones. Try 0.1 below the default if notes are missing. |
 | `--orphan` | Also keep notes without a detected attack (quiet or sustained notes). |
 | `--fingering low` | Re-finger towards first position (Viterbi optimiser). The default `model` keeps the model's strings; `auto` re-fingers only clearly awkward shapes. |
 | `--tempo 90` | Fixed tempo instead of following the detected beats. |
@@ -80,8 +83,8 @@ well under a minute and 1–2 GB of GPU memory.
 ```bash
 .venv/bin/guitab-app          # opens http://127.0.0.1:8765 in the browser
 ```
-Load an audio/video file or record from the microphone, choose the model (any trained checkpoint among E19, E15, E18, E20),
-capo, fuller chords, note sensitivity, fingering, tempo and grid, then **Transcribe**. The tab appears in an
+Load an audio/video file or record from the microphone, choose the model (any trained checkpoint among E25, E19, E24, E15, E18,
+E20), capo, fuller chords, note sensitivity (starts at the model's own default), fingering, tempo and grid, then **Transcribe**. The tab appears in an
 [alphaTab](https://www.alphatab.net) viewer with playback: play/pause (space), click a note to play from there, speed,
 metronome, count-in, loop, tab only or notation + tab, zoom, download the .gp5. Any existing .gp5 can be opened too.
 Every result is kept in `out/app/` and listed under *Tabs*. The server only listens on this computer; the viewer is
@@ -91,7 +94,8 @@ loaded from a CDN, so the page needs internet.
 
 1. **Features** (`guitab/audio.py`): 22.05 kHz mono → constant-Q spectrogram, 36 bins per octave, 8 octaves, hop 256.
 2. **Model** (`guitab/model.py`): harmonic stacking → CNN → transformer over time → per frame and string: fret
-   (21 classes incl. silent), onset, plus a pitch head. Sizes `mid` (24M parameters, default) and `large` (66M).
+   (21 classes incl. silent), onset, plus a pitch head. Sizes `half` (2.9M), `small` (6.2M, the default E25), `mid`
+   (24M) and `large` (66M).
 3. **Note extraction** (`guitab/inference.py`): notes start at onset peaks, take the most likely fret, end at silence,
    a new attack or a fret change (legato); the same pitch on two strings at once is kept once; an attack that splits a
    ringing note is merged back; with a capo, notes below it move to a playable string.
@@ -145,7 +149,7 @@ The tools that built it are not published; `guitab/custom_data.py` documents the
 
 ### 4.2 Train
 
-The exact command lines of every training run are in `experiments/` (E8 … E19, described in EXPERIMENTS.md). The default
+The exact command lines of every training run are in `experiments/` (E8 … E25, described in EXPERIMENTS.md). The default
 model (E15) is trained in three stages, each after the previous one has finished (about 5 h, 3 h and 2 h on an M-series Mac):
 ```bash
 experiments/train_mid_gaps.sh     > runs/tabmodel_mid_gaps.log 2>&1       # E10: GuitarSet + GAPS, from scratch
@@ -154,9 +158,17 @@ experiments/train_mid_close.sh    > runs/tabmodel_mid_close.log 2>&1     # E15: 
 grep EVAL runs/tabmodel_mid_close.log                                   # validation every 1000 steps
 .venv/bin/python scripts/train_tablm.py corpus && .venv/bin/python scripts/train_tablm.py train   # tab LM for --music_lm
 ```
-- `scripts/train.py` options: `--device`, `--max_memory`, `--size mid|large`, `--steps`, `--batch`, `--lr`, `--accum` (gradient accumulation);
+The default model E25 needs the custom dataset: train E18 (`experiments/train_large_all.sh`) and E19
+(`experiments/train_mid_all.sh`), then distil them into the small model (about 11 h; the teachers run on every batch):
+```bash
+SIZE=small experiments/train_distill.sh > runs/tabmodel_small_distill.log 2>&1   # E25 (SIZE=half: E24, 2.9M)
+```
+Distilled models are under-confident on note attacks: pick their onset threshold on validation and store it in the
+checkpoint as `"decoding": {"onset": 0.5}` (E24 / E25); every command and the web app apply it.
+- `scripts/train.py` options: `--device`, `--max_memory`, `--size half|small|mid|large`, `--steps`, `--batch`, `--lr`, `--accum` (gradient accumulation);
   data shares `--gaps_share`, `--synth_share`, `--ss_share` (custom dataset) and their string-label weights `--*_tab_weight`; audio
-  augmentation `--aug_copies`, `--aug_share`; `--init` (fine-tune from a checkpoint); `--eval_degraded`.
+  augmentation `--aug_copies`, `--aug_share`; `--init` (fine-tune from a checkpoint); `--eval_degraded`; `--teacher` (repeatable)
+  and `--distill` (distillation weight).
 - The launchers cap GPU memory (`--max_memory 0.35`, a fraction of the GPU memory) and run at low priority so the machine
   stays usable; `DEVICE=cuda experiments/...` picks the device.
   Re-running a launcher resumes from `last.pt`; `STOP_AT=18:30 experiments/...` stops at the first evaluation after 18:30.

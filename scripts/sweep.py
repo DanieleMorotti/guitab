@@ -101,7 +101,7 @@ def main():
         n = min(len(lab), len(tab))
         counts += frame_metrics(tab[:n], lab[:n])
         ref = ref_notes(jams_path(name))
-        est = extract_notes(tab, onset)
+        est = extract_notes(tab, onset, model.decoding)
         note_sf.append(match_f1(ref, est, key=("string", "fret")))
         note_p.append(match_f1(ref, est, key=("pitch",)))
     results["benchmark"] = {

@@ -31,7 +31,7 @@ def prf(tp, n_ref, n_est):
     return p, r, 2 * p * r / max(p + r, 1e-9)
 
 
-def analyse(items):
+def analyse(items, params=None):
     """items: [(track name, label path, shift, tab probs, onset probs)]."""
     files = items
     C = Counter()
@@ -43,7 +43,7 @@ def analyse(items):
     for stem, labels, shift, tab, onset in items:
         ref = gaps_ref(labels) if labels.endswith(".json") else ref_notes(labels, shift)
         ref = [r for r in ref if r["pitch"] is not None and 40 <= r["pitch"] <= 40 + 19 + 24]
-        est = extract_notes(tab, onset)
+        est = extract_notes(tab, onset, params)
         pp = match(ref, est, ("pitch",))
         known = [j for j, r in enumerate(ref) if r["string"]]
         C["ref"] += len(ref)
@@ -188,7 +188,7 @@ def main():
     res = {}
     for name, trs in sets.items():
         items = [(tr["name"], tr["labels"], tr["shift"], *predict(model, tr["feat"], device)) for tr in trs]
-        res[name] = analyse(items)
+        res[name] = analyse(items, model.decoding)
         print(name, json.dumps(res[name]), flush=True)
     if args.out:
         Path(args.out).write_text(json.dumps(res, indent=1))

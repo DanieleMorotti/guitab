@@ -27,10 +27,18 @@ DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orp
 
 
 def load_model(checkpoint, device):
+    """The model in eval mode; model.decoding = the checkpoint's own note-extraction settings (DEFAULT_PARAMS keys, e.g.
+    onset .5 for the distilled models), applied on top of DEFAULT_PARAMS and under any explicit params."""
     ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
     model = build_model(ckpt["size"])
     model.load_state_dict(ckpt["model"])
+    model.decoding = ckpt.get("decoding", {})
     return model.to(device).eval()
+
+
+def checkpoint_decoding(checkpoint):
+    """DEFAULT_PARAMS with the checkpoint's own settings applied, without building the model (memory-mapped read)."""
+    return {**DEFAULT_PARAMS, **torch.load(checkpoint, map_location="cpu", mmap=True, weights_only=False).get("decoding", {})}
 
 
 @torch.no_grad()
@@ -166,6 +174,7 @@ def transcribe_file(checkpoint, audio_path, device, params=None, music_lm=None):
     model = load_model(checkpoint, device)
     feat = compute_cqt(load_audio(audio_path))
     tab, onset = predict(model, feat, device)
+    params = {**model.decoding, **(params or {})}
     if music_lm is None:
         return extract_notes(tab, onset, params)
     from .paths import TABLM_CHECKPOINT
@@ -173,4 +182,4 @@ def transcribe_file(checkpoint, audio_path, device, params=None, music_lm=None):
 
     cfg = {**DEFAULT_DECODING, **music_lm}
     lm = load_tablm(cfg.pop("path", TABLM_CHECKPOINT), device)
-    return decode_with_lm(tab, onset, lm, device, **cfg)
+    return decode_with_lm(tab, onset, lm, device, params=params, **cfg)

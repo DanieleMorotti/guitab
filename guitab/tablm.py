@@ -111,8 +111,9 @@ def lm_scores(lm, histories, chords, device):
     return (g * msk).sum(-1).view(len(histories), len(seqs)).cpu().numpy()
 
 
-def decode_with_lm(tab, onset, lm, device, lam=0.3, beta=1.0, tau=0.2, beam=4, win=4, reattack=0.75):
-    """Notes (as extract_notes) from the acoustic model's tab / onset probabilities and the tab LM."""
+def decode_with_lm(tab, onset, lm, device, lam=0.3, beta=1.0, tau=0.2, beam=4, win=4, reattack=0.75, params=None):
+    """Notes (as extract_notes) from the acoustic model's tab / onset probabilities and the tab LM; params: the
+    note-extraction settings of the legato pass-through (the acoustic model's own decoding)."""
     beams = [(0.0, [1], [])]  # (score, LM history, chosen (string, fret, frame))
     for _, group in attack_groups(onset, tau, win):
         cands = candidates(tab, group)
@@ -142,7 +143,7 @@ def decode_with_lm(tab, onset, lm, device, lam=0.3, beta=1.0, tau=0.2, beam=4, w
             out.append({"onset": t / FPS, "offset": max(e, t + 2) / FPS, "string": s, "fret": f, "pitch": OPEN_PITCH[s] + f})
     # legato notes (no onset peak on their string) from the default extraction pass through
     pk = {c: set(peaks(onset[:, c], tau)) for c in range(6)}
-    for n in extract_notes(tab, onset):
+    for n in extract_notes(tab, onset, params):
         c, t = STRINGS.index(n["string"]), int(round(n["onset"] * FPS))
         if not any(p in pk[c] for p in range(t - 2, t + 3)):
             out.append(n)

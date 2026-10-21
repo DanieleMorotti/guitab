@@ -31,7 +31,11 @@ LOCK = threading.Lock()  # one model run at a time
 
 
 def available_models():
-    return [{"id": k, "label": label} for k, (path, label) in MODELS.items() if path.exists()]
+    """Trained checkpoints with their own default onset threshold (the page's note-sensitivity starting value)."""
+    from .inference import checkpoint_decoding  # loads torch on the first call
+
+    return [{"id": k, "label": label, "onset": checkpoint_decoding(path)["onset"]}
+            for k, (path, label) in MODELS.items() if path.exists()]
 
 
 def options(query):

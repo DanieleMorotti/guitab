@@ -1465,3 +1465,14 @@ significantly different from E19 on clean GuitarSet and the custom dataset (the 
 better on phone/room audio (+2.4 points) and GAPS (+1.3); it matches the E18 + E19 teacher average it learned from. Over
 E24 (half its size) it gains on phone/room audio and the custom set (+2.1 and +1.3, significant) and ties elsewhere.
 Needs onset threshold .5.
+
+**Adopted (2026-10-21): E25 is the default model.** `guitab/paths.py`: `DEFAULT_CHECKPOINT` = E25 when trained, else E15
+(public users can only train E15: E25 needs the custom dataset and the E18 / E19 teachers); E25 and E24 added to the web
+app's models. Per-model decoding: a checkpoint may carry `"decoding"` (note-extraction settings over `DEFAULT_PARAMS`),
+which `load_model` exposes as `model.decoding` and the CLI, pipeline, tab-LM decoding, web app (note-sensitivity starts at
+the model's onset) and evaluation scripts apply under any explicit setting; E24 and E25 store `{"onset": 0.5}`. README
+protocol (scripts/evaluate.py, evaluate_gaps.py): GuitarSet test .843 / .865 (E19 .843 / .866, reproduced), degraded
+.680 / .750 (E19 .640 / .721), GAPS pitch .826 (E19 .813).
+Clean-up: the kept checkpoints (E15, E18, E19, E20, E24, E25) are weights-only `best.pt` files (identical predictions;
+E25's is the step-24000 checkpoint); the `last.pt` files and the intermediate runs (`tabmodel_mid`, `tabmodel_mid_gaps`,
+`tabmodel_mid_gaps_aug`, `tabmodel_mid_gaps_synth`, `tabmodel_mid_songsterr`) are deleted (runs/ 2.3 GB -> 0.5 GB).

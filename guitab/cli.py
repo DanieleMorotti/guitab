@@ -1,6 +1,6 @@
 """Transcribe a guitar recording of any length to a Guitar Pro (.gp5) tab.
 
-The CQT frame/onset tab model (default checkpoint runs/tabmodel_mid_close/best.pt, E15) predicts notes
+The CQT frame/onset tab model (default checkpoint: E25 if trained, else E15; guitab/paths.py) predicts notes
 (seconds, string, fret); they are snapped to a grid that follows the beats detected by Beat This!
 (or a fixed --tempo), optionally re-fingered, and written as tab tokens and .gp5.
 
@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--fingering", choices=["model", "auto", "low"], default="model",
                         help="'model' keeps the tab model's strings; 'auto' re-optimises cautiously; 'low' prefers first position.")
     parser.add_argument("--onset", type=float, default=None,
-                        help="onset confidence threshold (default 0.6, tuned on GuitarSet validation; lower = more notes).")
+                        help="onset confidence threshold (default: the checkpoint's own, 0.5 for E24 / E25, else 0.6; lower = more notes).")
     parser.add_argument("--orphan", action="store_true",
                         help="also keep notes whose string sounds without a detected attack (more notes).")
     parser.add_argument("--params", default=None,

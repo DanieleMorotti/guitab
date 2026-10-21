@@ -507,7 +507,10 @@ async function loadModels() {
 }
 function selectModel(id) {
   model = id;
-  $("modelInfo").textContent = models.find((m) => m.id === id).label.split(" · ").slice(1).join(" · ");
+  const m = models.find((m) => m.id === id);
+  $("modelInfo").textContent = m.label.split(" · ").slice(1).join(" · ");
+  $("onset").value = m.onset;  // each model's own default note sensitivity
+  $("onset").oninput();
   $("go").disabled = !audioBlob;
 }
 

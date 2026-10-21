@@ -52,14 +52,16 @@ def main():
     print(f"reference: {len(ref)} notes; groups: {sum(len(g) == 1 for g in groups)} single, {sum(len(g) == 2 for g in groups)} "
           f"of 2, {sum(len(g) >= 3 for g in groups)} of 3+")
     for ck in args.checkpoints:
-        tab, onset = predict(load_model(ck, device), feat, device)
+        model = load_model(ck, device)
+        tab, onset = predict(model, feat, device)
         if args.music_lm:
             from guitab.paths import TABLM_CHECKPOINT
             from guitab.tablm import DEFAULT_DECODING, decode_with_lm, load_tablm
 
-            notes = decode_with_lm(tab, onset, load_tablm(TABLM_CHECKPOINT, device), device, **DEFAULT_DECODING)
+            notes = decode_with_lm(tab, onset, load_tablm(TABLM_CHECKPOINT, device), device, params=model.decoding,
+                                   **DEFAULT_DECODING)
         else:
-            notes = extract_notes(tab, onset)
+            notes = extract_notes(tab, onset, model.decoding)
         est = [e for e in notes if e["onset"] <= end]
         hit = {j for j, _ in match(ref, est, ("pitch",), tol=TOL)}
         parts = []

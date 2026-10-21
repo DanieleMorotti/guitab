@@ -139,7 +139,7 @@ def evaluate_guitarset(model, val, device, ref_cache):
     sf, pf = [], []
     for tr in val:
         tab, onset = predict(model, tr["feat"], device)
-        est = extract_notes(tab, onset)
+        est = extract_notes(tab, onset, getattr(model, "decoding", None))
         ref = ref_cache[tr["name"]]
         sf.append(match_f1(ref, est, key=("string", "fret")))
         pf.append(match_f1(ref, est, key=("pitch",)))
@@ -153,7 +153,7 @@ def evaluate_gaps(model, val, device, ref_cache):
     pf, agree, total = [], 0, 0
     for tr in val:
         tab, onset = predict(model, tr["feat"], device)
-        est = extract_notes(tab, onset)
+        est = extract_notes(tab, onset, getattr(model, "decoding", None))
         ref = ref_cache[tr["name"]]
         pf.append(match_f1(ref, est, key=("pitch",)))
         known = [r for r in ref if r["string"]]

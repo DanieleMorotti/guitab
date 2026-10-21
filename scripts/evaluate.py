@@ -46,7 +46,7 @@ def main():
         preds = [chunk_text(r, notes[p], s) for r, (p, s) in zip(refs, meta)]
         return preds, score(refs, preds)
 
-    params = {**DEFAULT_PARAMS, **(json.loads(args.params) if args.params else {})}
+    params = {**DEFAULT_PARAMS, **model.decoding, **(json.loads(args.params) if args.params else {})}
     if args.tune:
         results = []
         for on, fr, orphan, legato in itertools.product([0.3, 0.4, 0.5, 0.6], [0.3, 0.4, 0.5, 0.6], [True, False], [3, 5, 8]):
