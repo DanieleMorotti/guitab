@@ -1430,3 +1430,38 @@ and ~.78 through amps, and .85-.89 on the 5 real recordings. String choice trans
 (GuitarSet .84-.90), ~.62 through amps: electric necks, lighter strings and amp tone change the timbre cues the string
 decision relies on, and EGDB's rock/pop vocabulary (power chords, bends) differs from fingerstyle. Usable as a first
 draft for electric guitar (clean or crunch), with more string corrections to expect; no high-gain distortion was tested.
+
+### E25 — Distillation into an E20-sized student (6.2M, `runs/tabmodel_small_distill`) — 2026-10-20 → 10-21: E19 quality at a quarter of the size, best on phone/room audio and GAPS
+
+**Setup:** E24's recipe with `--size small` (`SIZE=small experiments/train_distill.sh`), teachers E18 + E19 averaged,
+24k steps, 1.7 s/step. The first attempt ran out of GPU memory at step 2100 (the E18 teacher's CNN ran while the
+student's activations were held for backward); `train.py` now computes the teacher targets before the student's forward
+pass (same targets, lower peak) and the run resumed from step 2000. Paused and resumed twice (steps 5000 and 22000).
+
+**Checkpoint and threshold (validation only):** `best.pt` (default-threshold selection) is step 16000, picked by a spike
+on degraded audio; the final step 24000 is better on clean GuitarSet and the custom set. Onset-threshold sweep, mean of
+clean string/fret, degraded string/fret, GAPS pitch and custom string/fret: step 16000 .7445, **step 24000 .7494** (both at
+onset .5, the same calibration offset as E24). Selected: `last.pt` (step 24000) at onset .5; validation clean .820,
+degraded .669, GAPS pitch .896, custom .614 (E19 at its best step: .818 / .627 / .885 / .617; teacher average .823 / .662
+/ .888 / .612).
+
+**Paired per-recording comparison** (test sets, onset ±50 ms, Wilcoxon signed-rank; E24 and E25 at onset .5):
+
+| Set (recordings) | E19 (24M) | E20 (6.2M) | E24 (2.9M) | E25 (6.2M) | E25 vs E19 | E25 vs E20 | E25 vs E24 |
+|---|---|---|---|---|---|---|---|
+| GuitarSet test, string+fret (60) | **.899** | .888 | .890 | .895 | wins 25/60, -.003, p=.30 | wins 35/60, +.007, p=.16 | wins 32/60, +.005, p=.39 |
+| GuitarSet test phone/room, string+fret (60) | .736 | .737 | .740 | **.761** | wins 35/60, +.024, p=.03 | wins 45/60, +.024, p<.001 | wins 37/60, +.021, p=.02 |
+| GAPS test (classical), pitch (19) | .813 | .808 | .825 | **.826** | wins 17/19, +.013, p=.001 | wins 17/19, +.018, p=.001 | wins 15/19, +.001, p=.10 |
+| custom-dataset held-out, string+fret (19) | **.617** | .611 | .601 | .614 | wins 12/19, -.003, p=.92 | wins 12/19, +.002, p=.13 | wins 13/19, +.013, p=.04 |
+
+Model time over all four sets (predict only, MPS): E19 65 s, E20 40 s, E24 28 s, E25 40 s. (`best.pt`, step 16000, for
+reference: .886 / .763 / .823 / .604; selected against on validation.)
+
+**EGDB electric guitar** (string+fret / pitch; see the EGDB entry): clean DI .721 / .845, JC Jazz .666 / .800, Plexi
+.646 / .782, real recordings pitch .880: the best string+fret of all models on every rendering.
+
+**Conclusion:** the best model of the project. At a quarter of E19's parameters and 1.6x its speed, E25 is not
+significantly different from E19 on clean GuitarSet and the custom dataset (the two sets E19 won) and significantly
+better on phone/room audio (+2.4 points) and GAPS (+1.3); it matches the E18 + E19 teacher average it learned from. Over
+E24 (half its size) it gains on phone/room audio and the custom set (+2.1 and +1.3, significant) and ties elsewhere.
+Needs onset threshold .5.

@@ -261,25 +261,28 @@ def main():
             g["lr"] = lr_at(step)
         opt.zero_grad(set_to_none=True)
 
-        def batch_loss(pred, xc, tc, oc, uc, wc):
+        def batch_loss(pred, soft, tc, oc, uc, wc):
             loss, p = loss_fn(pred, tc, oc, uc, wc)
-            if teachers:
-                kd, kd_tab = distill_loss(pred, teacher_targets(teachers, xc))
+            if soft is not None:
+                kd, kd_tab = distill_loss(pred, soft)
                 loss = (1 - args.distill) * loss + args.distill * kd
                 p["kd_tab"] = kd_tab
             return loss, p
 
+        # teacher targets before the student's forward pass: its activations are not held while the teachers run
         if args.accum == 1:
+            soft = teacher_targets(teachers, x) if teachers else None
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
                 pred = model(x)
-            loss, parts = batch_loss(pred, x, tab, onset, unk, tab_w)
+            loss, parts = batch_loss(pred, soft, tab, onset, unk, tab_w)
             loss.backward()
         else:  # same batch, forward/backward in args.accum chunks (lower peak memory), gradients averaged
             parts = {}
             for xc, tc, oc, uc, wc in zip(*(v.chunk(args.accum) for v in (x, tab, onset, unk, tab_w))):
+                soft = teacher_targets(teachers, xc) if teachers else None
                 with torch.autocast(device.type, dtype=torch.bfloat16, enabled=args.bf16):
                     pred = model(xc)
-                loss, p = batch_loss(pred, xc, tc, oc, uc, wc)
+                loss, p = batch_loss(pred, soft, tc, oc, uc, wc)
                 (loss / args.accum).backward()
                 for k, v in p.items():
                     parts[k] = parts.get(k, 0.0) + v / args.accum
