@@ -168,7 +168,7 @@ def main():
     parser.add_argument("--no-browser", action="store_true", help="do not open the page in the browser")
     args = parser.parse_args()
     if not available_models():
-        raise SystemExit("No trained checkpoint found (see paths.MODELS); train a model first (README, section 4).")
+        raise SystemExit("No model checkpoint found (see paths.MODELS): download the weights or train a model (README).")
     Handler.device = args.device
     OUT.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

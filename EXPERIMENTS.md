@@ -1444,6 +1444,9 @@ clean string/fret, degraded string/fret, GAPS pitch and custom string/fret: step
 onset .5, the same calibration offset as E24). Selected: `last.pt` (step 24000) at onset .5; validation clean .820,
 degraded .669, GAPS pitch .896, custom .614 (E19 at its best step: .818 / .627 / .885 / .617; teacher average .823 / .662
 / .888 / .612).
+Caveat (noted 2026-10-21): the custom-dataset validation set is the same 19 songs as the custom "held-out" test row below,
+and it was part of this selection mean (and of E24's threshold choice), so E24 / E25's custom-dataset scores are slightly
+optimistic; GuitarSet test, its degraded copy and GAPS test were never used for any choice.
 
 **Paired per-recording comparison** (test sets, onset ±50 ms, Wilcoxon signed-rank; E24 and E25 at onset .5):
 
@@ -1476,3 +1479,10 @@ protocol (scripts/evaluate.py, evaluate_gaps.py): GuitarSet test .843 / .865 (E1
 Clean-up: the kept checkpoints (E15, E18, E19, E20, E24, E25) are weights-only `best.pt` files (identical predictions;
 E25's is the step-24000 checkpoint); the `last.pt` files and the intermediate runs (`tabmodel_mid`, `tabmodel_mid_gaps`,
 `tabmodel_mid_gaps_aug`, `tabmodel_mid_gaps_synth`, `tabmodel_mid_songsterr`) are deleted (runs/ 2.3 GB -> 0.5 GB).
+
+### Weights release — 2026-10-21
+
+The trained weights (E25 default, E24, E19, E18, E15, E20 and the tab LM) are published on Hugging Face in the same
+layout as `runs/` (`hf download <hf-user>/guitab --local-dir runs`), licensed CC BY-NC-SA 4.0 like the non-commercial
+training data (GAPS, SynthTab); the code stays MIT. The custom dataset itself is still not distributed. README section 1
+updated (previously: "weights are not distributed").

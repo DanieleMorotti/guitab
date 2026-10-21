@@ -24,7 +24,8 @@ correct by ear, not as a finished tab.
 E15 is trained on public datasets only. E19 also used a custom dataset of real fingerstyle recordings with aligned
 tabs, which is not distributed. E25, the default, is a 6M-parameter model (a quarter of E19) trained to imitate the
 average of E19 and the 66M-parameter E18 (distillation): as good as E19 on clean steel-string audio, better on phone
-recordings and classical guitar, 1.6x faster.
+recordings and classical guitar, 1.6x faster. (The custom-dataset songs also served as validation when E25's checkpoint
+was chosen, so its score on that row is slightly optimistic.)
 
 **Electric guitar.** The models are trained on acoustic and classical guitar only, but they also work on clean or
 lightly overdriven electric guitar: on the [EGDB](https://ss12f32v.github.io/Guitar-Transcription/) test set (Chen et
@@ -50,9 +51,15 @@ uv pip install --python .venv/bin/python -e . --no-deps          # the `guitab` 
 Every command takes `--device auto|cuda|mps|cpu`; `auto` (default) uses an NVIDIA GPU if present, else the Apple GPU,
 else the CPU. The Beat This! beat-tracker weights are downloaded on first use.
 
-**Model weights are not distributed.** Train a model first (section 4); `guitab` uses E25
-(`runs/tabmodel_small_distill/best.pt`) when it exists, else E15 (`runs/tabmodel_mid_close/best.pt`, public data only),
-unless you pass `--checkpoint`.
+**Model weights** are on Hugging Face ([`<hf-user>/guitab`](https://huggingface.co/<hf-user>/guitab)), laid out like
+`runs/`, so one command puts every model where the code expects it:
+```bash
+uv pip install --python .venv/bin/python huggingface_hub
+.venv/bin/hf download <hf-user>/guitab --local-dir runs                                  # all models, ~0.5 GB
+.venv/bin/hf download <hf-user>/guitab tabmodel_small_distill/best.pt --local-dir runs   # only the default E25, 24 MB
+```
+`guitab` uses E25 (`runs/tabmodel_small_distill/best.pt`) when it exists, else E15 (`runs/tabmodel_mid_close/best.pt`),
+unless you pass `--checkpoint`. `--music_lm` also needs `tablm/tablm.pt`. To train the models yourself, see section 4.
 
 ## 2. Transcribe a recording
 
@@ -137,7 +144,8 @@ mkdir -p data/gaps && curl -L -o data/gaps/gaps_v1_no_audio.zip \
 .venv/bin/python scripts/synthtab_fetch.py download   # the songs in data/synthtab/selection.csv (versioned)
 ```
 
-**Custom dataset** (not distributed): real fingerstyle recordings with their tabs aligned to the audio, used by E17–E19.
+**Custom dataset** (not distributed): real fingerstyle recordings with their tabs aligned to the audio, used by E17–E19
+(and through E19, by the distilled E24 / E25).
 The tools that built it are not published; `guitab/custom_data.py` documents the layout training reads from `data/custom/`.
 
 **Feature caches**:
@@ -196,7 +204,7 @@ guitab/            the library: audio, model, inference, tablm, tab, fingering, 
 scripts/           command-line tools: data preparation, caches, training, evaluation
 experiments/       exact launchers of the training runs (see EXPERIMENTS.md)
 data/              datasets and caches (not versioned except eval_chunks.json and the subset selections)
-runs/              checkpoints and logs (not versioned)
+runs/              checkpoints (downloaded from Hugging Face or trained) and logs (not versioned)
 out/               transcriptions (not versioned)
 ```
 
@@ -207,6 +215,7 @@ out/               transcriptions (not versioned)
 ## Licence and credits
 
 Code: MIT (see `LICENSE`). Datasets keep their own licences (GuitarSet CC BY 4.0, GAPS CC BY-NC-SA 4.0, SynthTab
-CC BY-NC 4.0); a model trained on them inherits their non-commercial terms. Beat tracking: [Beat This!](https://github.com/CPJKU/beat_this).
+CC BY-NC 4.0); the models are trained on them and inherit their non-commercial terms, so the published weights are
+CC BY-NC-SA 4.0 (research and personal use). Beat tracking: [Beat This!](https://github.com/CPJKU/beat_this).
 The research started from [Audio2Tab](https://github.com/JackJamesLoth/Audio2Tab); the GuitarSet evaluation chunks
 follow its schedule.
