@@ -234,6 +234,11 @@ out/               transcriptions (not versioned)
 
 ## Licence and credits
 
-The code is MIT licensed (see `LICENSE`). The datasets keep their own licences: GuitarSet CC BY 4.0, GAPS CC BY-NC-SA 4.0, SynthTab CC BY-NC 4.0. The models are trained on them and inherit their non-commercial terms, so the published weights are CC BY-NC-SA 4.0, for research and personal use.
+The code is MIT licensed (see `LICENSE`). The datasets keep their own licences: GuitarSet CC BY 4.0, GAPS CC BY-NC-SA 4.0, SynthTab CC BY-NC 4.0. The models are trained on them and inherit their non-commercial terms, so the published weights are **CC BY-NC-SA 4.0**, for research and personal use. The beat tracker shared on Hugging Face is a converted copy of Beat This! and keeps its MIT licence.
 
-Beat tracking is done by [Beat This!](https://github.com/CPJKU/beat_this). The research started from [Audio2Tab](https://github.com/JackJamesLoth/Audio2Tab), whose schedule the GuitarSet evaluation chunks follow.
+Guitab builds on:
+
+- **Datasets:** [GuitarSet](https://zenodo.org/records/3371780) (Xi et al., 2018), [GAPS](https://zenodo.org/records/13962272) (Riley et al., 2024), [SynthTab](https://github.com/AirLabUR/SynthTab) (Zang et al., 2024), and [EGDB](https://ss12f32v.github.io/Guitar-Transcription/) (Chen et al., 2022) for the electric-guitar check.
+- **Ideas:** the constant-Q transform (Brown, 1991); the harmonic constant-Q stack (Bittner et al., "Deep salience representations for F0 estimation in polyphonic music", ISMIR 2017), built here, as in [Basic Pitch](https://github.com/spotify/basic-pitch) (Bittner et al., ICASSP 2022), by shifting one CQT; separate onset and frame predictions as in Onsets and Frames (Hawthorne et al., ISMIR 2018); one fret classifier per string, as in TabCNN (Wiggins and Kim, ISMIR 2019).
+- **Software:** [Beat This!](https://github.com/CPJKU/beat_this) for the beats (Foscarin et al., ISMIR 2024), [librosa](https://librosa.org) for the spectrogram, which the browser version ports to JavaScript, [PyGuitarPro](https://github.com/Perlence/PyGuitarPro) for the .gp5 files, [ONNX Runtime Web](https://onnxruntime.ai) and [alphaTab](https://www.alphatab.net) for the browser.
+- **Starting point:** the research started from [Audio2Tab](https://github.com/JackJamesLoth/Audio2Tab), whose schedule the GuitarSet evaluation chunks follow.
