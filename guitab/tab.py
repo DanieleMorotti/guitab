@@ -30,11 +30,18 @@ SUPPORTED_WAITS = [3840, 2880, 1920, 1440, 960, 720, 480, 360, 240, 120]
 
 def detect_beats(audio_path, device="cpu"):
     """(beats, downbeats) in seconds from Beat This! (local checkpoint if present, else downloaded)."""
+    import soundfile
     from beat_this.inference import File2Beats
+
+    from .audio import SR, load_audio
 
     ckpt = BEAT_THIS_CKPT
     file2beats = File2Beats(checkpoint_path=str(ckpt) if ckpt.exists() else "final0", device=device, dbn=False)
-    beats, downbeats = file2beats(str(audio_path))
+    try:
+        soundfile.info(str(audio_path))
+        beats, downbeats = file2beats(str(audio_path))  # Beat This! reads the file itself
+    except soundfile.LibsndfileError:  # video, m4a, ...: give it the audio decoded with ffmpeg
+        beats, downbeats = super(File2Beats, file2beats).__call__(load_audio(audio_path), SR)
     return np.asarray(beats, dtype=float), np.asarray(downbeats, dtype=float)
 
 

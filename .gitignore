@@ -5,6 +5,8 @@ data/*
 data/synthtab/*
 !data/synthtab/selection.csv
 runs/
+weights/
+huggingface/
 out/
 .venv/
 .venv_bp/

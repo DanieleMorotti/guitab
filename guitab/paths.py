@@ -13,20 +13,29 @@ GAPS = DATA / "gaps"
 EVAL_CHUNKS = DATA / "eval_chunks.json"   # frozen GuitarSet evaluation chunks (versioned)
 BEAT_THIS_CKPT = DATA / "models" / "beat_this-final0.ckpt"
 CERTS = DATA / "certs" / "macos_trusted.pem"
-BEST_CHECKPOINT = RUNS / "tabmodel_small_distill" / "best.pt"  # E25, distilled from E18 + E19 (experiments/train_distill.sh)
-PUBLIC_CHECKPOINT = RUNS / "tabmodel_mid_close" / "best.pt"  # E15, the best model trainable from public data only
-# E25 when trained (it needs the custom dataset), else E15
+WEIGHTS = ROOT / "weights"  # the published weights (Hugging Face), one flat folder
+
+
+def checkpoint(run, published=None):
+    """runs/<run>/best.pt when trained here, else the published file in weights/ (if this model is published)."""
+    trained = RUNS / run / "best.pt"
+    return WEIGHTS / published if published and not trained.exists() else trained
+
+
+BEST_CHECKPOINT = checkpoint("tabmodel_small_distill", "guitab_e25.pt")  # E25, distilled from E18 + E19 (train_distill.sh)
+PUBLIC_CHECKPOINT = checkpoint("tabmodel_mid_close")  # E15, the best model trainable from public data only
+# E25 when trained or downloaded, else E15
 DEFAULT_CHECKPOINT = BEST_CHECKPOINT if BEST_CHECKPOINT.exists() else PUBLIC_CHECKPOINT
-TABLM_CHECKPOINT = RUNS / "tablm" / "tablm.pt"  # tab language model for --music_lm (scripts/train_tablm.py)
+TABLM_RUN = RUNS / "tablm" / "tablm.pt"  # where scripts/train_tablm.py writes the tab language model (--music_lm)
+TABLM_CHECKPOINT = TABLM_RUN if TABLM_RUN.exists() else WEIGHTS / "tablm.pt"
 # checkpoints offered by the web app (guitab/app.py), first available = preselected
 MODELS = {
-    "E25": (RUNS / "tabmodel_small_distill" / "best.pt",
-            "E25 · small model (6M) distilled from E18 + E19: E19 quality, 1.6x faster, best on phone/room audio"),
-    "E19": (RUNS / "tabmodel_mid_all" / "best.pt", "E19 · mid model, all data (best on clean steel-string guitar)"),
-    "E24": (RUNS / "tabmodel_half_distill" / "best.pt", "E24 · tiny distilled model (2.9M), E20 quality, 2.4x faster than E19"),
-    "E15": (RUNS / "tabmodel_mid_close" / "best.pt", "E15 · mid model, public data only"),
-    "E18": (RUNS / "tabmodel_large_all" / "best.pt", "E18 · large model, robust to phone/room audio, 2.5x slower"),
-    "E20": (RUNS / "tabmodel_small_all" / "best.pt", "E20 · small model (6M), all data, ~1 point below E19 on clean audio"),
+    "E25": (BEST_CHECKPOINT, "E25 · small distilled model (6M): best on phone recordings, 1.5x faster than E19"),
+    "E19": (checkpoint("tabmodel_mid_all", "guitab_e19.pt"), "E19 · mid model, all data, E25's teacher"),
+    "E24": (checkpoint("tabmodel_half_distill", "guitab_e24.pt"), "E24 · tiny distilled model (2.9M), 2.3x faster"),
+    "E15": (checkpoint("tabmodel_mid_close"), "E15 · mid model, public data only"),
+    "E18": (checkpoint("tabmodel_large_all"), "E18 · large model, robust to phone/room audio, 2.5x slower"),
+    "E20": (checkpoint("tabmodel_small_all"), "E20 · small model (6M), all data, ~1 point below E19 on clean audio"),
 }
 
 

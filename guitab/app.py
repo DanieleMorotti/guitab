@@ -2,8 +2,10 @@
 
     guitab-app [--port 8765] [--device auto] [--no-browser]      # then open http://127.0.0.1:8765
 
-The page (guitab/web/index.html) sends the audio and the options to POST /api/transcribe; the server converts the audio
-with ffmpeg, runs the same pipeline as the `guitab` command (guitab/pipeline.py) and keeps every result in
+The page (guitab/web/index.html) decodes the recording in the browser (any audio or video format the browser plays) and
+sends it as a 22.05 kHz mono wav, with the options, to POST /api/transcribe; files the browser cannot decode are sent as
+they are and read by guitab.audio.load_audio (ffmpeg only for formats libsndfile cannot read). The server runs the same
+pipeline as the `guitab` command (guitab/pipeline.py) and keeps every result in
 out/app/<time>_<name>/: audio.wav (the converted audio), <name>.gp5 and result.json (settings and summary). DELETE
 /api/tabs/<id> removes one. The tab viewer and player is alphaTab (loaded from a CDN).
 Only listens on 127.0.0.1; one transcription runs at a time.
@@ -13,7 +15,6 @@ import argparse
 import json
 import re
 import shutil
-import subprocess
 import threading
 import time
 import webbrowser
@@ -94,6 +95,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             return self.send(200, (WEB / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/logo.png":
+            return self.send(200, (WEB / "logo.png").read_bytes(), "image/png")
         if path == "/api/models":
             return self.send(200, available_models())
         if path == "/api/history":
@@ -129,12 +132,15 @@ class Handler(BaseHTTPRequestHandler):
         run.mkdir(parents=True, exist_ok=True)
         src, wav = run / f"input{suffix}", run / "audio.wav"
         src.write_bytes(audio)
-        try:
-            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-ac", "1", "-ar", "22050", str(wav)],
-                           check=True, capture_output=True)
-        except subprocess.CalledProcessError as e:
+        try:  # the page sends wav (decoded by the browser) when it can; other formats go through ffmpeg if installed
+            import soundfile
+
+            from .audio import SR, load_audio
+
+            soundfile.write(str(wav), load_audio(src), SR)
+        except Exception as e:  # unreadable or unsupported audio
             shutil.rmtree(run)
-            return self.send(400, {"error": "could not read the audio: " + e.stderr.decode(errors="replace")[-300:]})
+            return self.send(400, {"error": f"could not read the audio: {e}"})
         src.unlink()  # audio.wav is enough to transcribe again
         from .pipeline import transcribe_to_tab  # torch and the models load on the first request
 
@@ -173,7 +179,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     url = f"http://127.0.0.1:{args.port}"
-    print(f"guitab app on {url}  (Ctrl+C to stop); results in {OUT}", flush=True)
+    print(f"Guitab app on {url}  (Ctrl+C to stop); results in {OUT}", flush=True)
     if not args.no_browser:
         threading.Timer(0.5, webbrowser.open, [url]).start()
     try:

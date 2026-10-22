@@ -5,6 +5,8 @@ Feature: log-magnitude CQT, 36 bins/octave from E1 (288 bins, up to ~10.5 kHz), 
 harmonic stack itself, so one CQT per track is computed/cached.
 """
 
+from pathlib import Path
+
 import numpy as np
 
 SR = 22050
@@ -25,7 +27,35 @@ def compute_cqt(y):
 
 
 def load_audio(path):
+    """Mono audio at SR. Formats libsndfile reads (wav, flac, ogg, mp3, aiff, ...) need nothing else; anything else
+    (video, m4a / aac, webm) is decoded with ffmpeg, which is then required."""
     import librosa
+    import soundfile
 
+    try:
+        soundfile.info(str(path))
+    except soundfile.LibsndfileError:
+        return _load_with_ffmpeg(path)
     y, _ = librosa.load(str(path), sr=SR, mono=True)
+    return y
+
+
+def _load_with_ffmpeg(path):
+    import shutil
+    import subprocess
+    import tempfile
+
+    import soundfile
+
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(f"cannot read {Path(path).name}: this format (video, m4a, ...) needs ffmpeg, which is not "
+                           "installed. Install it (e.g. brew install ffmpeg, apt install ffmpeg) or convert the file to "
+                           "wav, mp3 or flac.")
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = Path(tmp) / "audio.wav"
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", str(SR), str(wav)],
+                           capture_output=True)
+        if r.returncode:
+            raise RuntimeError(f"ffmpeg could not read {Path(path).name}: " + r.stderr.decode(errors="replace")[-300:])
+        y, _ = soundfile.read(str(wav), dtype="float32")
     return y

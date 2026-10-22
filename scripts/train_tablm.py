@@ -27,7 +27,7 @@ import torch.nn.functional as F
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from guitab.device import DEVICES, pick_device  # noqa: E402
-from guitab.paths import DATA, TABLM_CHECKPOINT  # noqa: E402
+from guitab.paths import DATA, TABLM_RUN  # noqa: E402
 from guitab.custom_data import SELECTION  # noqa: E402
 from guitab.synthtab import LABEL_ZIP  # noqa: E402
 from guitab.tablm import CTX, VOCAB, TabLM, tok  # noqa: E402
@@ -103,7 +103,7 @@ def cmd_train(args):
     model = TabLM().to(dev)
     print(f"{sum(p.numel() for p in model.parameters()) / 1e6:.1f}M params", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
-    TABLM_CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
+    TABLM_RUN.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     for step in range(1, args.steps + 1):
         for g in opt.param_groups:
@@ -123,7 +123,7 @@ def cmd_train(args):
             model.train()
             print(f"step {step} train {loss.item():.3f} val {vl:.3f} (perplexity {math.exp(vl):.1f}) "
                   f"{(time.time() - t0) / step:.2f}s/step", flush=True)
-            torch.save(model.state_dict(), TABLM_CHECKPOINT)
+            torch.save(model.state_dict(), TABLM_RUN)
 
 
 def main():

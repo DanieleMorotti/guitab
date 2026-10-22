@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--fingering", choices=["model", "auto", "low"], default="model",
                         help="'model' keeps the tab model's strings; 'auto' re-optimises cautiously; 'low' prefers first position.")
     parser.add_argument("--onset", type=float, default=None,
-                        help="onset confidence threshold (default: the checkpoint's own, 0.5 for E24 / E25, else 0.6; lower = more notes).")
+                        help="onset confidence threshold (default: the checkpoint's own, 0.45 for E25, 0.5 for E24, else 0.6; lower = more notes).")
     parser.add_argument("--orphan", action="store_true",
                         help="also keep notes whose string sounds without a detected attack (more notes).")
     parser.add_argument("--params", default=None,
