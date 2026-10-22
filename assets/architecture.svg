@@ -129,7 +129,7 @@
     <text x="20" y="34" font-size="15" font-weight="700" fill="#1f2d3d">Tab language model</text>
     <text x="20" y="56" font-size="12" fill="#5a4a3c">optional (--music_lm): a 3.3M</text>
     <text x="20" y="72" font-size="12" fill="#5a4a3c">transformer trained on 12.7k tabs</text>
-    <text x="20" y="88" font-size="12" fill="#5a4a3c">rescores the chords</text>
+    <text x="20" y="88" font-size="12" fill="#5a4a3c">guides a beam search over chords</text>
   </g>
   <line x1="542" y1="428" x2="572" y2="428" stroke="#1f2d3d" stroke-width="2" marker-end="url(#arrow)"/>
 

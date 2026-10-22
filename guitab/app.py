@@ -137,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
 
             from .audio import SR, load_audio
 
-            soundfile.write(str(wav), load_audio(src), SR)
+            soundfile.write(str(wav), load_audio(src), SR, subtype="FLOAT")  # float: no 16-bit rounding
         except Exception as e:  # unreadable or unsupported audio
             shutil.rmtree(run)
             return self.send(400, {"error": f"could not read the audio: {e}"})

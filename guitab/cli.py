@@ -22,7 +22,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--audio", required=True)
     parser.add_argument("--out_dir", required=True)
-    parser.add_argument("--checkpoint", default=str(DEFAULT_CHECKPOINT), help="tab model checkpoint (.pt).")
+    parser.add_argument("--checkpoint", default=str(DEFAULT_CHECKPOINT), help="tab model checkpoint (.safetensors or .pt).")
     parser.add_argument("--tempo", default="auto",
                         help="'auto' = follow the beats detected by Beat This!; or a fixed tempo in BPM.")
     parser.add_argument("--fingering", choices=["model", "auto", "low"], default="model",
@@ -35,7 +35,7 @@ def main():
                         help='JSON note-extraction settings, e.g. the tuned ones of a checkpoint (see EXPERIMENTS.md); '
                              '--onset / --orphan are applied on top.')
     parser.add_argument("--music_lm", action="store_true",
-                        help="decode jointly with the tab language model (runs/tablm/tablm.pt): fuller chords, ~10-20 s slower; "
+                        help="decode jointly with the tab language model (weights/tablm.safetensors, or runs/tablm/tablm.pt if trained): fuller chords, ~10-20 s slower; "
                              "ignores --onset / --orphan / --params (EXPERIMENTS.md, A1).")
     parser.add_argument("--music_lm_weight", type=float, default=0.3, help="weight of the tab LM (0.3 tuned; >= 0.6 overrides the audio).")
     parser.add_argument("--music_lm_bonus", type=float, default=1.0, help="per-note bonus with --music_lm (higher = fuller chords, more false notes).")
