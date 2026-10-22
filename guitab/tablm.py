@@ -53,7 +53,11 @@ class TabLM(nn.Module):
 
 
 def load_tablm(path, device):
-    """The tab LM from a .safetensors file (published) or a .pt state dict (scripts/train_tablm.py)."""
+    """The tab LM from a .safetensors file (published, downloaded if missing) or a .pt state dict
+    (scripts/train_tablm.py)."""
+    from .paths import fetch
+
+    path = fetch(path)
     if str(path).endswith(".safetensors"):
         from safetensors.torch import load_file
 

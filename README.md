@@ -42,7 +42,7 @@ uv pip install --python .venv/bin/python -e . --no-deps          # the `guitab` 
 
 `pip install -e ".[train]"` works too; `requirements.txt` pins the environment the results were produced with. On Linux the default PyTorch wheel includes CUDA; for another CUDA version or a CPU-only build, install `torch` first as described on [pytorch.org](https://pytorch.org/get-started/locally/). On Windows, the commands below use `.venv\Scripts\` instead of `.venv/bin/`.
 
-Every command takes `--device auto|cuda|mps|cpu`. The default, `auto`, uses an NVIDIA GPU if present, else the Apple GPU, else the CPU. The Beat This! beat-tracker weights are downloaded on first use.
+Every command takes `--device auto|cuda|mps|cpu`. The default, `auto`, uses an NVIDIA GPU if present, else the Apple GPU, else the CPU.
 
 **ffmpeg is optional.** WAV, FLAC, OGG, MP3 and AIFF files are read without it. The `guitab` command needs [ffmpeg](https://ffmpeg.org) only for other formats, such as videos or M4A files (`brew install ffmpeg` on macOS, `apt install ffmpeg` on Debian or Ubuntu). The web app decodes those in the browser and needs no ffmpeg. Training needs ffmpeg for its audio augmentation and the GAPS download.
 
@@ -58,14 +58,14 @@ The weights are on Hugging Face at [danmor/guitab](https://huggingface.co/danmor
 | `tablm.safetensors` | the tab language model behind `--music_lm` | 13 MB |
 | `beat_this_final0_int8.onnx` | the [Beat This!](https://github.com/CPJKU/beat_this) beat tracker with int8 weights, shared with the browser version | 21 MB |
 
-Put the `.safetensors` and `beat_this_final0_int8.onnx` files in `weights/`, either from the Hugging Face page or with:
+**Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (E25 and the beat tracker for the first transcription, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
 
 ```bash
 uv pip install --python .venv/bin/python huggingface_hub
 .venv/bin/hf download danmor/guitab --local-dir weights
 ```
 
-`guitab` uses **E25**, and falls back to E15 (`runs/tabmodel_mid_close/best.pt`, section 4) when E25 is missing. Pass `--checkpoint` to use another model. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file; every command reads both formats, and `scripts/export_weights.py` writes the published `.safetensors` files from your own checkpoints. Without `beat_this_final0_int8.onnx`, the beats come from the PyTorch Beat This! model (downloaded on first use), whose results are close but not identical to the browser version's.
+`guitab` uses **E25**. Pass `--checkpoint` to use another model, e.g. `--checkpoint weights/guitab_e19.safetensors`. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file, and if you train only E15 (section 4) it becomes the default; every command reads both formats, and `scripts/export_weights.py` writes the published `.safetensors` files from your own checkpoints. If `beat_this_final0_int8.onnx` cannot be downloaded, the beats come from the PyTorch Beat This! model (from `data/models/beat_this-final0.ckpt`, else downloaded by the Beat This! package), whose results are close but not identical to the browser version's.
 
 ## 2. Transcribe a recording
 
@@ -96,7 +96,7 @@ The result is `out/my_song/my_song.gp5`, named after the audio file, plus `my_so
 .venv/bin/guitab-app          # opens http://127.0.0.1:8765 in the browser
 ```
 
-Load an audio or video file (the browser decodes it), or record from the microphone. Choose the model (any available checkpoint among E25, E19, E24, E15, E18 and E20), the capo, fuller chords, the note sensitivity (it starts at the model's own default), the fingering, the tempo and the grid, then press **Transcribe**.
+Load an audio or video file (the browser decodes it), or record from the microphone. On the first launch the app downloads E25 if no model is in `runs/` or `weights/`. Choose the model (any checkpoint present among E25, E19, E24, E15, E18 and E20; E19 and E24 appear once they are in `weights/`), the capo, fuller chords, the note sensitivity (it starts at the model's own default), the fingering, the tempo and the grid, then press **Transcribe**.
 
 The tab appears in an [alphaTab](https://www.alphatab.net) viewer with playback: play and pause (space), click a note to play from there, speed, metronome, count-in, loop, tab only or notation and tab, zoom, and download of the .gp5. Any existing .gp5 file can be opened too.
 

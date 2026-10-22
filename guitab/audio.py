@@ -32,6 +32,8 @@ def load_audio(path):
     import librosa
     import soundfile
 
+    if not Path(path).is_file():
+        raise FileNotFoundError(f"no such file: {path}")
     try:
         soundfile.info(str(path))
     except soundfile.LibsndfileError:

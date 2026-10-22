@@ -24,7 +24,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .device import DEVICES
-from .paths import MODELS, ROOT
+from .paths import DEFAULT_CHECKPOINT, MODELS, ROOT, fetch
 
 WEB = Path(__file__).parent / "web"
 OUT = ROOT / "out" / "app"
@@ -173,8 +173,11 @@ def main():
     parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--no-browser", action="store_true", help="do not open the page in the browser")
     args = parser.parse_args()
-    if not available_models():
-        raise SystemExit("No model checkpoint found (see paths.MODELS): download the weights or train a model (README).")
+    if not any(path.exists() for path, _ in MODELS.values()):
+        try:
+            fetch(DEFAULT_CHECKPOINT)  # a fresh install: E25 from Hugging Face (the beat tracker on the first transcription)
+        except RuntimeError as e:
+            raise SystemExit(f"No model found in runs/ or weights/, and {e}.") from e
     Handler.device = args.device
     OUT.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

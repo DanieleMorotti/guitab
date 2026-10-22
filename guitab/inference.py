@@ -31,8 +31,10 @@ DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orp
 def read_checkpoint(path, weights=True):
     """{"model": state dict, "size", "decoding", ...} from a .safetensors file (the published weights; the other fields
     are JSON values in its metadata) or a .pt training checkpoint (read with weights_only=True: tensors and plain values
-    only, no code). weights=False reads only the other fields."""
-    path = str(path)
+    only, no code). weights=False reads only the other fields. A missing published file is downloaded first."""
+    from .paths import fetch
+
+    path = str(fetch(path))
     if path.endswith(".safetensors"):
         from safetensors import safe_open
         from safetensors.torch import load_file

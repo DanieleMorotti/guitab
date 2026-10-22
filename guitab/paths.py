@@ -1,5 +1,7 @@
-"""Repository locations. Data, weights and outputs live outside version control (see .gitignore)."""
+"""Repository locations. Data, weights and outputs live outside version control (see .gitignore); a published file
+missing from weights/ is downloaded from the Hugging Face repository on first use (fetch)."""
 
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,7 @@ EVAL_CHUNKS = DATA / "eval_chunks.json"   # frozen GuitarSet evaluation chunks (
 BEAT_THIS_CKPT = DATA / "models" / "beat_this-final0.ckpt"
 CERTS = DATA / "certs" / "macos_trusted.pem"
 WEIGHTS = ROOT / "weights"  # the published weights (Hugging Face), one flat folder
+WEIGHTS_URL = "https://huggingface.co/danmor/guitab/resolve/main/"
 # the browser version's beat tracker (Beat This! final0, int8 weights; scripts/export_web.py), published with the weights
 BEAT_ONNX = next((p for p in (WEIGHTS, ROOT / "docs" / "models") if (p / "beat_this_final0_int8.onnx").exists()),
                  WEIGHTS) / "beat_this_final0_int8.onnx"
@@ -27,8 +30,8 @@ def checkpoint(run, published=None):
 
 BEST_CHECKPOINT = checkpoint("tabmodel_small_distill", "guitab_e25.safetensors")  # E25, distilled from E18 + E19 (train_distill.sh)
 PUBLIC_CHECKPOINT = checkpoint("tabmodel_mid_close")  # E15, the best model trainable from public data only
-# E25 when trained or downloaded, else E15
-DEFAULT_CHECKPOINT = BEST_CHECKPOINT if BEST_CHECKPOINT.exists() else PUBLIC_CHECKPOINT
+# E25 (trained, downloaded, or downloaded on first use), unless only E15 is trained here
+DEFAULT_CHECKPOINT = PUBLIC_CHECKPOINT if PUBLIC_CHECKPOINT.exists() and not BEST_CHECKPOINT.exists() else BEST_CHECKPOINT
 TABLM_RUN = RUNS / "tablm" / "tablm.pt"  # where scripts/train_tablm.py writes the tab language model (--music_lm)
 TABLM_CHECKPOINT = TABLM_RUN if TABLM_RUN.exists() else WEIGHTS / "tablm.safetensors"
 # checkpoints offered by the web app (guitab/app.py), first available = preselected
@@ -40,6 +43,29 @@ MODELS = {
     "E18": (checkpoint("tabmodel_large_all"), "E18 · large model, robust to phone/room audio, 2.5x slower"),
     "E20": (checkpoint("tabmodel_small_all"), "E20 · small model (6M), all data, ~1 point below E19 on clean audio"),
 }
+
+
+def fetch(path):
+    """path, after downloading it from WEIGHTS_URL if it is a published file missing from weights/."""
+    path = Path(path)
+    if path.exists() or path.resolve().parent != WEIGHTS.resolve():
+        return path
+    import shutil
+    import urllib.request
+
+    url = WEIGHTS_URL + path.name
+    print(f"downloading {path.name} from {url} (once, to {path.parent})", file=sys.stderr, flush=True)
+    part = path.with_name(path.name + ".part")
+    try:
+        WEIGHTS.mkdir(exist_ok=True)
+        with urllib.request.urlopen(url, timeout=30) as r, open(part, "wb") as f:
+            shutil.copyfileobj(r, f)
+    except OSError as e:
+        part.unlink(missing_ok=True)
+        raise RuntimeError(f"could not download {url} ({e}); check the connection, or download the weights by hand "
+                           "(README, Install)") from e
+    part.rename(path)
+    return path
 
 
 def resolve(path):

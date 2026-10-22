@@ -15,11 +15,13 @@ Tab tokens: 960 ticks per quarter; notes still sounding at a barline are re-emit
 silent gaps of at least a quarter become rests.
 """
 
+import sys
+
 import numpy as np
 
 from .fingering import refinger_tokens
 from .guitar import OPEN_PITCH
-from .paths import BEAT_ONNX, BEAT_THIS_CKPT
+from .paths import BEAT_ONNX, BEAT_THIS_CKPT, fetch
 
 TICKS_PER_BEAT = 960
 GRID = 120  # 32nd note: finest grid the token writer supports
@@ -49,8 +51,12 @@ class _PaddedChunks:
 
 
 def _beat_model(device):
-    """The browser's beat tracker (Beat This! final0 with int8 weights, ONNX) when it is available, so both versions
-    find the same beats; else the PyTorch final0 checkpoint (local if present, else downloaded)."""
+    """The browser's beat tracker (Beat This! final0 with int8 weights, ONNX; downloaded with the weights if missing), so
+    both versions find the same beats; offline, the PyTorch final0 checkpoint (data/models, else Beat This!'s cache)."""
+    try:
+        fetch(BEAT_ONNX)
+    except RuntimeError as e:
+        print(f"{e}: using the PyTorch Beat This! model (close, not identical beats)", file=sys.stderr, flush=True)
     if BEAT_ONNX.exists():
         import onnxruntime
 
