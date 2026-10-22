@@ -1,38 +1,38 @@
 {
  "tab_models": [
   {
-   "id": "E19",
-   "label": "E19 \u00b7 mid model, all data (best on steel-string guitar)",
-   "url": "models/E19.onnx",
-   "mb": 83.8,
-   "window": 432
-  },
-  {
-   "id": "E15",
-   "label": "E15 \u00b7 mid model, public data only",
-   "url": "models/E15.onnx",
-   "mb": 83.8,
-   "window": 432
-  },
-  {
-   "id": "E18",
-   "label": "E18 \u00b7 large model, most robust to phone/room audio, 2.5x slower",
-   "url": "models/E18.onnx",
-   "mb": 241.5,
-   "window": 432
-  },
-  {
-   "id": "E20",
-   "label": "E20 \u00b7 small model (6M), all data, 2.4x faster, ~1 point below E19 on clean audio",
-   "url": "models/E20.onnx",
+   "id": "E25",
+   "label": "E25 \u00b7 small distilled model (6M): best on phone recordings, 1.5x faster than E19",
+   "url": "https://huggingface.co/danmor/guitab/resolve/main/guitab_e25.onnx",
    "mb": 20.1,
-   "window": 432
+   "window": 432,
+   "decoding": {
+    "onset": 0.45
+   }
+  },
+  {
+   "id": "E19",
+   "label": "E19 \u00b7 mid model, all data, E25's teacher",
+   "url": "https://huggingface.co/danmor/guitab/resolve/main/guitab_e19.onnx",
+   "mb": 83.8,
+   "window": 432,
+   "decoding": {}
+  },
+  {
+   "id": "E24",
+   "label": "E24 \u00b7 tiny distilled model (2.9M), 2.3x faster",
+   "url": "https://huggingface.co/danmor/guitab/resolve/main/guitab_e24.onnx",
+   "mb": 9.1,
+   "window": 432,
+   "decoding": {
+    "onset": 0.5
+   }
   }
  ],
  "beat_model": {
-  "id": "small0",
-  "url": "models/beat_this_small0.onnx",
-  "mb": 9.5,
+  "id": "final0",
+  "url": "https://huggingface.co/danmor/guitab/resolve/main/beat_this_final0_int8.onnx",
+  "mb": 21.0,
   "chunk": 1500,
   "border": 6
  }

@@ -4,11 +4,11 @@
 
 <p align="center"><b>Guitar audio → Guitar Pro tab</b></p>
 
-Guitab turns a recording of a solo guitar into a tab you can open in Guitar Pro, TuxGuitar, MuseScore or any online gp5 player. It is made for steel-string fingerstyle playing, works on any recording you can play (a phone video is fine), and runs on a laptop: a 4-minute song takes well under a minute.
+Guitab turns a recording of a solo guitar into a tab you can open in Guitar Pro, TuxGuitar, MuseScore or any online gp5 player. It is made for **steel-string fingerstyle** playing, works on *any recording you can play* (a phone video is fine), and runs on a laptop: a 4-minute song takes well under a minute.
 
-You get a `.gp5` file with the notes on the right strings and frets, laid out on a grid that follows the beats of the recording, with an optional capo. A local web app lets you record or load a song, transcribe it and play the tab back in the browser.
+You get a `.gp5` file with the notes on the right strings and frets, laid out on a grid that follows the beats of the recording, with an optional capo. A **local web app** lets you record or load a song, transcribe it and play the tab back, and a **[browser version](https://danielemorotti.github.io/guitab/)** does the same with nothing to install.
 
-**What to expect.** On clean recordings about 85% of the notes come out right, with the correct string and fret. Dense 3–4 note chords, quiet inner voices and phone recordings in a reverberant room are much harder. Treat the result as a first draft to correct by ear, not as a finished tab.
+**What to expect.** On clean recordings about 85% of the notes come out right, with the correct string and fret. Dense 3–4 note chords, quiet inner voices and phone recordings in a reverberant room are much harder. Treat the result as *a first draft to correct by ear*, not as a finished tab.
 
 ## Results
 
@@ -48,7 +48,7 @@ Every command takes `--device auto|cuda|mps|cpu`. The default, `auto`, uses an N
 
 ### Model weights
 
-The weights are on Hugging Face at [`<hf-user>/guitab`](https://huggingface.co/<hf-user>/guitab):
+The weights are on Hugging Face at [danmor/guitab](https://huggingface.co/danmor/guitab):
 
 | File | Model | Size |
 |---|---|---|
@@ -56,15 +56,16 @@ The weights are on Hugging Face at [`<hf-user>/guitab`](https://huggingface.co/<
 | `guitab_e24.pt` | E24, the tiny model | 11 MB |
 | `guitab_e19.pt` | E19 | 91 MB |
 | `tablm.pt` | the tab language model behind `--music_lm` | 13 MB |
+| `beat_this_final0_int8.onnx` | the [Beat This!](https://github.com/CPJKU/beat_this) beat tracker with int8 weights, shared with the browser version | 21 MB |
 
-Put them in `weights/`, either from the Hugging Face page or with:
+Put the `.pt` and `beat_this_final0_int8.onnx` files in `weights/`, either from the Hugging Face page or with:
 
 ```bash
 uv pip install --python .venv/bin/python huggingface_hub
-.venv/bin/hf download <hf-user>/guitab --local-dir weights
+.venv/bin/hf download danmor/guitab --local-dir weights
 ```
 
-`guitab` uses E25, and falls back to E15 (`runs/tabmodel_mid_close/best.pt`, section 4) when E25 is missing. Pass `--checkpoint` to use another model. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file.
+`guitab` uses **E25**, and falls back to E15 (`runs/tabmodel_mid_close/best.pt`, section 4) when E25 is missing. Pass `--checkpoint` to use another model. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file. Without `beat_this_final0_int8.onnx`, the beats come from the PyTorch Beat This! model (downloaded on first use), whose results are close but not identical to the browser version's.
 
 ## 2. Transcribe a recording
 
@@ -103,31 +104,35 @@ Every result is kept in `out/app/` and listed under *Tabs*. The server only list
 
 ### Browser version (no Python, no server)
 
-`docs/` is a static page that does the whole transcription in the browser: the audio never leaves the device. The models
-run with [ONNX Runtime Web](https://onnxruntime.ai) (WebGPU when the browser has it, else WebAssembly), and the rest of the
-pipeline (constant-Q spectrogram, note extraction, beat grid, fingering, .gp5 writer) is ported to JavaScript
-(`docs/js/`). On a test song its .gp5 is byte-identical to the Python pipeline's (with the same beat tracker). Each model
-is downloaded the first time it is used and kept in the browser cache.
+`docs/` is a static page that does the whole transcription in the browser, so *the audio never leaves the device*. The models run with [ONNX Runtime Web](https://onnxruntime.ai) (WebGPU when the browser has it, else WebAssembly), and the rest of the pipeline (constant-Q spectrogram, note extraction, beat grid, fingering, .gp5 writer) is ported to JavaScript in `docs/js/`. It gives the same .gp5 as the Python pipeline, **byte for byte**: both use the same models and beat tracker, checked on four recordings (fingerstyle, classical, electric) at 22.05 kHz. Audio at other sample rates is resampled by the browser instead of librosa, so its results are close but not identical.
+
+**Try it at [danielemorotti.github.io/guitab](https://danielemorotti.github.io/guitab/).** It offers E25 (20 MB), E19 (84 MB) and the tiny E24 (9 MB), plus the 21 MB beat tracker. The selected model is downloaded from Hugging Face the first time you transcribe with it, and the browser keeps it for later visits.
+
+To run it locally (a page served from this computer reads the models from `docs/models/` instead of Hugging Face):
 
 ```bash
 .venv/bin/python scripts/export_web.py      # docs/models/*.onnx, docs/models.json, docs/assets/dsp.json (pip install -e '.[web]')
 python3 -m http.server 8800 -d docs         # then open http://127.0.0.1:8800
 ```
-Differences from the local app: no fuller-chords option (the tab language model is not ported); beats come from the small
-Beat This! model (2M parameters instead of 20M; same tempo on 8 of 9 test recordings), run on WebAssembly because its
-WebGPU output differs; tabs are kept in the browser (IndexedDB). `?backend=wasm` in the URL turns WebGPU off.
 
-To publish it with GitHub Pages (Settings → Pages → deploy from the `docs/` folder), the .onnx files must be hosted
-elsewhere (they are not versioned, and E15/E19 are 84 MB): upload them to a host that allows cross-origin downloads
-(e.g. a Hugging Face model repository) and put their full URLs in `docs/models.json`.
+Compared with the local app there is **no fuller-chords option**: the tab language model would be quite slow in the browser, so it is only in the local web app. The beat tracker runs on WebAssembly, and the tabs are kept in the browser (IndexedDB). A 2:23 song takes about 22 s. Audio and video files are decoded by the browser itself (WAV, MP3, FLAC, OGG, M4A, and the audio track of MP4 / MOV / WebM videos in Chrome, Edge and Safari). `?backend=wasm` in the URL turns WebGPU off.
 
-## 3. How it works
+It is published with GitHub Pages (Settings → Pages → deploy from the `docs/` folder of `main`). The .onnx files stay out of git: `docs/models.json` points at the Hugging Face repository (`export_web.py --base`), where the files of `docs/models/` are uploaded next to the .pt weights.
 
-1. **Features** (`guitab/audio.py`): 22.05 kHz mono audio becomes a constant-Q spectrogram with 36 bins per octave over 8 octaves, hop 256.
-2. **Model** (`guitab/model.py`): harmonic stacking, a CNN and a transformer over time predict, for each frame and string, the fret (21 classes including silent) and the onset, plus a pitch head. Sizes: `half` (2.9M parameters), `small` (6.2M, E25), `mid` (24M) and `large` (66M).
-3. **Note extraction** (`guitab/inference.py`): notes start at onset peaks, take the most likely fret, and end at silence, at a new attack or at a fret change (legato). The same pitch on two strings at once is kept once, an attack that splits a ringing note is merged back, and with a capo the notes below it move to a playable string.
-4. **Optional chord decoding** (`guitab/tablm.py`, `--music_lm`): a beam search over candidate chords, scored by the acoustic model and by a 3.3M-parameter transformer trained on about 12.7k symbolic guitar tabs.
-5. **Tab** (`guitab/tab.py`, `guitab/fingering.py`, `guitab/gp5.py`): beats and downbeats from Beat This!, quantisation to a grid that follows tempo drift, optional re-fingering, and Guitar Pro 5 output.
+## 3. Architecture
+
+<p align="center"><img src="assets/architecture.svg" alt="Guitab architecture: audio, constant-Q spectrogram, harmonic stack, CNN, transformer, fret / onset / pitch heads, then note extraction, optional tab language model, beat grid and fingering, .gp5 tab" width="100%"></p>
+
+1. **Features** (`guitab/audio.py`): the audio, at 22.05 kHz mono, becomes a constant-Q spectrogram with 36 bins per octave over 8 octaves, one frame every 11.6 ms.
+2. **Harmonic stack** (`guitab/model.py`): six shifted copies of the spectrogram (harmonics ½, 1, 2, 3, 4, 5) are stacked as channels, so the partials of a pitch line up and a convolution sees a note's whole harmonic pattern at once.
+3. **CNN**: six convolution blocks (64, 128, 256 channels) keep the time resolution and pool the 144 frequency bins down to 12.
+4. **Transformer**: attention over time gives each frame the context of the surrounding seconds, which decides chords, sustained notes and the choice of string. The size sets the depth: `small` (E25, 4 layers, 256 wide, 6.2M parameters), `half` (E24, 2.9M), `mid` (E19, 6 layers, 512 wide, 24M) and `large` (66M).
+5. **Heads**: for every frame and string, the fret (21 classes: silent or frets 0–19) and the onset probability, plus a 48-semitone pitch head used only as an extra training target.
+6. **Note extraction** (`guitab/inference.py`): notes start at onset peaks, take the most likely fret, and end at silence, at a new attack or at a fret change (legato). The same pitch on two strings at once is kept once, an attack that splits a ringing note is merged back, and with a capo the notes below it move to a playable string.
+7. **Optional chord decoding** (`guitab/tablm.py`, `--music_lm`): a beam search over candidate chords, scored by the acoustic model and by a 3.3M-parameter transformer trained on about 12.7k symbolic guitar tabs.
+8. **Tab** (`guitab/tab.py`, `guitab/fingering.py`, `guitab/gp5.py`): beats and downbeats from Beat This!, quantisation to a grid that follows tempo drift, optional re-fingering, and Guitar Pro 5 output.
+
+E25 and E24 are trained by distillation: the small student learns from the labels and, with equal weight, from the averaged predictions of the larger E18 and E19.
 
 ## 4. Training
 
@@ -220,13 +225,12 @@ guitab/            the library: audio, model, inference, tablm, tab, fingering, 
                    device, data, augment, guitarset, gaps, synthtab, custom_data, evaluation, paths
 scripts/           command-line tools: data preparation, caches, training, evaluation
 experiments/       exact launchers of the training runs (see EXPERIMENTS.md)
-assets/            the logo
+assets/            the logo and the architecture diagram
 data/              datasets and caches (not versioned except eval_chunks.json and the subset selections)
 runs/              trained checkpoints and logs (not versioned)
 weights/           the published weights downloaded from Hugging Face (not versioned)
 out/               transcriptions (not versioned)
 ```
-
 
 ## Licence and credits
 

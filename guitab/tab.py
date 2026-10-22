@@ -19,7 +19,7 @@ import numpy as np
 
 from .fingering import refinger_tokens
 from .guitar import OPEN_PITCH
-from .paths import BEAT_THIS_CKPT
+from .paths import BEAT_ONNX, BEAT_THIS_CKPT
 
 TICKS_PER_BEAT = 960
 GRID = 120  # 32nd note: finest grid the token writer supports
@@ -28,20 +28,80 @@ MIN_REST_TICKS = 960
 SUPPORTED_WAITS = [3840, 2880, 1920, 1440, 960, 720, 480, 360, 240, 120]
 
 
+BEAT_CHUNK = 1500  # Beat This! frames per chunk (30 s at 50 fps)
+
+
+class _PaddedChunks:
+    """Runs a Beat This! model on every chunk padded with silence to BEAT_CHUNK frames, as the browser version's
+    fixed-shape ONNX model does (padding also scores better on GuitarSet test beats: .743 vs .693 unpadded)."""
+
+    def __init__(self, run):
+        self.run = run  # [1, BEAT_CHUNK, 128] float32 array -> (beat, downbeat) logits [1, BEAT_CHUNK]
+
+    def __call__(self, chunk):
+        import torch
+
+        n = chunk.shape[1]
+        x = np.zeros((1, BEAT_CHUNK, chunk.shape[2]), np.float32)
+        x[:, :n] = chunk.cpu().numpy()
+        beat, downbeat = self.run(x)
+        return {"beat": torch.from_numpy(np.asarray(beat)[:, :n]), "downbeat": torch.from_numpy(np.asarray(downbeat)[:, :n])}
+
+
+def _beat_model(device):
+    """The browser's beat tracker (Beat This! final0 with int8 weights, ONNX) when it is available, so both versions
+    find the same beats; else the PyTorch final0 checkpoint (local if present, else downloaded)."""
+    if BEAT_ONNX.exists():
+        import onnxruntime
+
+        # basic graph optimisations only: the extended ones fuse the int8 weights into integer matrix products (int8
+        # activations), while the browser's runtime computes in float32; with basic ones both agree to ~1e-5
+        opts = onnxruntime.SessionOptions()
+        opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
+        sess = onnxruntime.InferenceSession(str(BEAT_ONNX), opts, providers=["CPUExecutionProvider"])
+        return _PaddedChunks(lambda x: sess.run(["beat", "downbeat"], {"x": x}))
+    import torch
+    from beat_this.inference import load_model
+
+    dev = torch.device(device)
+    model = load_model(str(BEAT_THIS_CKPT) if BEAT_THIS_CKPT.exists() else "final0", dev)
+
+    def run(x):
+        with torch.inference_mode():
+            out = model(torch.from_numpy(x).to(dev))
+        return out["beat"].float().cpu().numpy(), out["downbeat"].float().cpu().numpy()
+
+    return _PaddedChunks(run)
+
+
 def detect_beats(audio_path, device="cpu"):
-    """(beats, downbeats) in seconds from Beat This! (local checkpoint if present, else downloaded)."""
+    """(beats, downbeats) in seconds from Beat This! (minimal post-processing, no DBN)."""
     import soundfile
-    from beat_this.inference import File2Beats
+    import soxr
+    import torch
+    from beat_this.inference import split_predict_aggregate
+    from beat_this.model.postprocessor import Postprocessor
+    from beat_this.preprocessing import LogMelSpect
+    from beat_this.preprocessing import load_audio as beat_this_audio
 
     from .audio import SR, load_audio
 
-    ckpt = BEAT_THIS_CKPT
-    file2beats = File2Beats(checkpoint_path=str(ckpt) if ckpt.exists() else "final0", device=device, dbn=False)
     try:
         soundfile.info(str(audio_path))
-        beats, downbeats = file2beats(str(audio_path))  # Beat This! reads the file itself
-    except soundfile.LibsndfileError:  # video, m4a, ...: give it the audio decoded with ffmpeg
-        beats, downbeats = super(File2Beats, file2beats).__call__(load_audio(audio_path), SR)
+        signal, sr = beat_this_audio(str(audio_path))  # read as Beat This! reads it
+    except soundfile.LibsndfileError:  # video, m4a, ...: the audio decoded with ffmpeg
+        signal, sr = load_audio(audio_path), SR
+    if signal.ndim == 2:
+        signal = signal.mean(1)
+    if sr != 22050:
+        signal = soxr.resample(signal, in_rate=sr, out_rate=22050)
+    with torch.inference_mode():
+        spect = LogMelSpect(device="cpu")(torch.tensor(signal, dtype=torch.float32))
+        pred = split_predict_aggregate(spect, BEAT_CHUNK, 6, "keep_first", _beat_model(device))
+    # logits rounded to 0.01 (float64, round half up) before picking peaks, as the browser version does: its
+    # WebAssembly arithmetic differs from the native one by ~1e-6, which could move a near-tied peak by a frame
+    rounded = [torch.from_numpy(np.floor(pred[k].double().numpy() * 100 + 0.5) / 100) for k in ("beat", "downbeat")]
+    beats, downbeats = Postprocessor(type="minimal")(*rounded)
     return np.asarray(beats, dtype=float), np.asarray(downbeats, dtype=float)
 
 

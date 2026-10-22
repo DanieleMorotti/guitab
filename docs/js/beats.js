@@ -28,7 +28,11 @@ export async function detectBeats(spect, frames, runChunk, chunk = 1500, border 
       if (t >= 0 && t < frames) { beat[t] = b[i]; down[t] = d[i]; }
     }
   }
-  return postprocess(beat, down);
+  // logits rounded to 0.01 (float64, round half up) before picking peaks, as guitab.tab.detect_beats does: the
+  // browser's WebAssembly arithmetic differs from Python's native one by ~1e-6, which could otherwise move a near-tied
+  // peak by a frame and shift the bar grid
+  const round = (a) => Float64Array.from(a, (v) => Math.floor(v * 100 + 0.5) / 100);
+  return postprocess(round(beat), round(down));
 }
 
 // Beat and downbeat times (s) from frame logits; downbeats moved onto the nearest beat.

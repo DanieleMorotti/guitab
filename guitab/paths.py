@@ -14,6 +14,9 @@ EVAL_CHUNKS = DATA / "eval_chunks.json"   # frozen GuitarSet evaluation chunks (
 BEAT_THIS_CKPT = DATA / "models" / "beat_this-final0.ckpt"
 CERTS = DATA / "certs" / "macos_trusted.pem"
 WEIGHTS = ROOT / "weights"  # the published weights (Hugging Face), one flat folder
+# the browser version's beat tracker (Beat This! final0, int8 weights; scripts/export_web.py), published with the weights
+BEAT_ONNX = next((p for p in (WEIGHTS, ROOT / "docs" / "models") if (p / "beat_this_final0_int8.onnx").exists()),
+                 WEIGHTS) / "beat_this_final0_int8.onnx"
 
 
 def checkpoint(run, published=None):

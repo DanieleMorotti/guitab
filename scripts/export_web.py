@@ -1,10 +1,10 @@
 """Export what the browser app (docs/) needs: the tab models and the beat tracker as ONNX, plus the DSP constants.
 
-    python scripts/export_web.py                       # every trained model in paths.MODELS + Beat This! small0
-    python scripts/export_web.py --models E20 --out docs
+    python scripts/export_web.py      # E25, E19, E24 + Beat This! final0 (int8 weights) into docs/models/
 
-Writes <out>/models/<id>.onnx (not versioned: host them where the page can fetch them, see docs/models.json),
-<out>/models.json (the models the page offers) and <out>/assets/dsp.json (constants, versioned):
+Writes <out>/models/guitab_<id>.onnx (not versioned: the published page fetches them from --base, the Hugging Face
+model repo, where they sit next to the .pt weights), <out>/models.json (the models the page offers, with their download
+URL, size and own decoding settings) and <out>/assets/dsp.json (constants, versioned):
   - the CQT: librosa's sparse FFT filter basis of one octave (every octave uses the same filters at half the sample
     rate), the filter lengths, and an FIR filter matching the soxr_hq halving librosa uses between octaves;
   - the Beat This! log-mel spectrogram: its mel filterbank;
@@ -29,6 +29,7 @@ from guitab.paths import DATA, MODELS  # noqa: E402
 HALVING_TAPS = 2047
 TAB_WINDOW = 432  # frames per model window (inference.predict)
 BEAT_CHUNK = 1500  # Beat This! frames per chunk (30 s at 50 fps)
+WEB_MODELS = ["E25", "E19", "E24"]  # offered by the page, first = preselected
 
 
 class TabProbs(torch.nn.Module):
@@ -72,6 +73,45 @@ def check(module, path, inputs, names):
         got = sess.run(names, {"x": x.numpy()})
         worst = max(worst, *(float(np.abs(a - b).max()) for a, b in zip(ref, got)))
     return worst
+
+
+def int8_weights(src, dst, min_size=4096):
+    """Store the large MatMul / Conv / Gemm weights as int8 with a per-output-channel scale and a DequantizeLinear in
+    front of them: a quarter of the download, while the arithmetic stays float32 (onnxruntime folds the dequantisation
+    into the initializers when it loads the model). Unlike dynamic quantisation, no activation is rounded to 8 bits, so
+    the browser and Python, which differ by ~1e-6 in their float arithmetic, find the same beats."""
+    import onnx
+    from onnx import helper, numpy_helper
+
+    model = onnx.load(str(src))
+    graph = model.graph
+    inits = {i.name: i for i in graph.initializer}
+    axis_of = {}  # weight name -> output-channel axis
+    for node in graph.node:
+        if node.op_type in ("MatMul", "Gemm") and len(node.input) > 1 and node.input[1] in inits:
+            axis_of[node.input[1]] = 0 if node.op_type == "Gemm" and any(a.name == "transB" and a.i for a in node.attribute) else 1
+        elif node.op_type == "Conv" and node.input[1] in inits:
+            axis_of[node.input[1]] = 0
+    new_nodes = []
+    for name, axis in axis_of.items():
+        w = numpy_helper.to_array(inits[name]).astype(np.float32)
+        if w.ndim < 2 or w.size < min_size:
+            continue
+        other = tuple(i for i in range(w.ndim) if i != axis)
+        scale = np.maximum(np.abs(w).max(axis=other), 1e-12) / 127.0
+        shape = [1] * w.ndim
+        shape[axis] = -1
+        q = np.clip(np.round(w / scale.reshape(shape)), -127, 127).astype(np.int8)
+        graph.initializer.remove(inits[name])
+        graph.initializer.extend([numpy_helper.from_array(q, name + "_q"),
+                                  numpy_helper.from_array(scale.astype(np.float32), name + "_scale")])
+        new_nodes.append(helper.make_node("DequantizeLinear", [name + "_q", name + "_scale"], [name], axis=axis,
+                                          name=name + "_dequantize"))
+    nodes = list(graph.node)  # the dequantised weights feed the nodes that use them: define them first
+    del graph.node[:]
+    graph.node.extend(new_nodes + nodes)
+    onnx.checker.check_model(model)
+    onnx.save(model, str(dst))
 
 
 def dsp_constants():
@@ -169,8 +209,13 @@ def gp5_template():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="docs")
-    parser.add_argument("--models", nargs="*", default=None, help="ids from paths.MODELS (default: every trained one)")
-    parser.add_argument("--beat", default="small0", help="Beat This! checkpoint name in data/models (small0 / final0)")
+    parser.add_argument("--models", nargs="*", default=WEB_MODELS, help="ids from paths.MODELS (default: E25 E19 E24)")
+    parser.add_argument("--base", default="https://huggingface.co/danmor/guitab/resolve/main/",
+                        help="URL prefix the published page downloads the .onnx files from (a page served from localhost "
+                             "reads them from docs/models/)")
+    parser.add_argument("--beat", default="final0", help="Beat This! checkpoint name in data/models (final0 / small0)")
+    parser.add_argument("--beat_fp32", action="store_true", help="keep the beat tracker's weights in float32 (default: "
+                        "int8 weights with float32 arithmetic, final0 79 -> 21 MB)")
     args = parser.parse_args()
     out = Path(args.out)
     torch.manual_seed(0)
@@ -182,27 +227,32 @@ def main():
     print("assets/dsp.json written", flush=True)
 
     manifest = {"tab_models": [], "beat_model": None}
-    ids = args.models or [k for k, (p, _) in MODELS.items() if p.exists()]
-    for mid in ids:
+    for mid in args.models:
         ckpt, label = MODELS[mid]
         module = TabProbs(load_model(ckpt, "cpu")).eval()
-        path = out / "models" / f"{mid}.onnx"
+        path = out / "models" / f"guitab_{mid.lower()}.onnx"
         export(module, torch.rand(1, TAB_WINDOW, N_BINS), path, ["tab", "onset"])
         err = check(module, path, [torch.rand(1, TAB_WINDOW, N_BINS) for _ in range(3)], ["tab", "onset"])
         size = path.stat().st_size / 2**20
         print(f"{mid}: {path} {size:.1f} MB, max |onnx - torch| {err:.2e}", flush=True)
-        manifest["tab_models"].append({"id": mid, "label": label, "url": f"models/{mid}.onnx", "mb": round(size, 1),
-                                       "window": TAB_WINDOW})
+        decoding = module.model.decoding  # the checkpoint's own note-extraction settings (e.g. onset .45 for E25)
+        manifest["tab_models"].append({"id": mid, "label": label, "url": args.base + path.name, "mb": round(size, 1),
+                                       "window": TAB_WINDOW, "decoding": decoding})
 
     from beat_this.inference import load_model as load_beat_model
 
     beat = BeatLogits(load_beat_model(str(DATA / "models" / f"beat_this-{args.beat}.ckpt"), "cpu")).eval()
     path = out / "models" / f"beat_this_{args.beat}.onnx"
     export(beat, torch.rand(1, BEAT_CHUNK, 128), path, ["beat", "downbeat"])
+    if not args.beat_fp32:  # int8 weights, float32 arithmetic: a quarter of the download
+        int8 = path.with_name(path.stem + "_int8.onnx")
+        int8_weights(path, int8)
+        path.unlink()
+        path = int8
     err = check(beat, path, [torch.rand(1, BEAT_CHUNK, 128) * 5 for _ in range(3)], ["beat", "downbeat"])
     size = path.stat().st_size / 2**20
     print(f"Beat This! {args.beat}: {path} {size:.1f} MB, max |onnx - torch| {err:.2e}", flush=True)
-    manifest["beat_model"] = {"id": args.beat, "url": path.relative_to(out).as_posix(), "mb": round(size, 1),
+    manifest["beat_model"] = {"id": args.beat, "url": args.base + path.name, "mb": round(size, 1),
                               "chunk": BEAT_CHUNK, "border": 6}
     (out / "models.json").write_text(json.dumps(manifest, indent=1))
     print(f"{out / 'models.json'} written", flush=True)

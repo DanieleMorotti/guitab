@@ -16,6 +16,7 @@ dependencies = [
     "librosa>=0.10",
     "soundfile>=0.12",
     "pyguitarpro>=0.9",
+    "onnxruntime>=1.20",  # the int8 beat tracker shared with the browser version (guitab/tab.py)
     "beat-this @ git+https://github.com/CPJKU/beat_this@b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
 ]
 
@@ -23,7 +24,7 @@ dependencies = [
 # dataset preparation, audio augmentation and training
 train = ["scipy>=1.11", "pedalboard>=0.9", "pretty_midi>=0.2.10", "music21>=9", "yt-dlp"]
 # exporting the models for the browser version (scripts/export_web.py)
-web = ["onnx>=1.17", "onnxruntime>=1.20", "onnxscript>=0.2"]
+web = ["onnx>=1.17", "onnxscript>=0.2"]
 
 [project.scripts]
 guitab = "guitab.cli:main"

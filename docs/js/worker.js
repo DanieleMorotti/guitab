@@ -31,6 +31,13 @@ async function loadDsp(base) {
 }
 
 // Model bytes from the browser cache, else downloaded with progress and cached.
+// the model's download URL: models.json points at the Hugging Face repository; a page served from this computer
+// (localhost, 127.0.0.1) reads the same files from docs/models/ instead, so it works before they are uploaded
+function modelUrl(url, base) {
+  const local = ["localhost", "127.0.0.1"].includes(new URL(base).hostname);
+  return new URL(local ? "models/" + url.split("/").pop() : url, base).href;
+}
+
 async function modelBytes(url, label) {
   let cache = null;
   try { cache = await caches.open(CACHE); } catch { /* no Cache Storage (e.g. private mode) */ }
@@ -85,26 +92,27 @@ async function transcribe({ audio, base, opts }) {
   const t0 = performance.now();
   if (opts.backend && !backend) backend = opts.backend; // page URL ?backend=wasm forces the CPU
   await loadDsp(base);
-  const modelUrl = new URL(opts.model.url, base).href;
+  const tabUrl = modelUrl(opts.model.url, base);
 
   progress("features", 0, "Computing the spectrogram…");
   const feat = cqtFeature(audio, dsp, (f) => progress("features", f, "Computing the spectrogram…"));
 
-  const tabSession = await getSession(modelUrl, `model ${opts.model.id} (${opts.model.mb} MB)`, true);
+  const tabSession = await getSession(tabUrl, `model ${opts.model.id} (${opts.model.mb} MB)`, true);
   const win = opts.model.window || 432, nBins = dsp.n_bins;
   const probs = await predict(feat.data, feat.frames, nBins, async (x) => {
     const out = await tabSession.run({ x: new ort.Tensor("float32", x, [1, win, nBins]) });
     return { tab: await out.tab.getData(), onset: await out.onset.getData() };
   }, (f) => progress("model", f, `Transcribing (${backend === "webgpu" ? "WebGPU" : "WebAssembly"})…`), win);
 
-  const params = opts.onset ? { onset: opts.onset } : {};
+  // the model's own note-extraction settings (e.g. onset .45 for E25), under the page's note-sensitivity value
+  const params = { ...(opts.model.decoding || {}), ...(opts.onset ? { onset: opts.onset } : {}) };
   const notes = applyCapo(extractNotes(probs, params), opts.capo);
 
   let grid;
   if (opts.tempo === "auto") {
     progress("beats", 0, "Finding the beats…");
     const beatModel = opts.beatModel;
-    const beatSession = await getSession(new URL(beatModel.url, base).href, `beat tracker (${beatModel.mb} MB)`, false);
+    const beatSession = await getSession(modelUrl(beatModel.url, base), `beat tracker (${beatModel.mb} MB)`, false);
     const mel = melSpectrogram(audio, dsp);
     const { beats, downbeats } = await detectBeats(mel.data, mel.frames, async (x) => {
       const out = await beatSession.run({ x: new ort.Tensor("float32", x, [1, beatModel.chunk, 128]) });
