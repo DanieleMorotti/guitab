@@ -22,6 +22,8 @@ dependencies = [
 [project.optional-dependencies]
 # dataset preparation, audio augmentation and training
 train = ["scipy>=1.11", "pedalboard>=0.9", "pretty_midi>=0.2.10", "music21>=9", "yt-dlp"]
+# exporting the models for the browser version (scripts/export_web.py)
+web = ["onnx>=1.17", "onnxruntime>=1.20", "onnxscript>=0.2"]
 
 [project.scripts]
 guitab = "guitab.cli:main"

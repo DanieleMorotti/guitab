@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guitab</title>
+<meta name="description" content="Guitar audio to tab (Guitar Pro), transcribed in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23f5a524'/%3E%3Cg fill='none' stroke='%231b1204' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round' transform='translate(2.4 2.4) scale(.8)'%3E%3Cpath d='M18.5 2.5l3 3'/%3E%3Cpath d='M20 4l-7.6 7.6'/%3E%3Cpath d='M11.4 9.8c-1.5-1-3.6-.8-4.8.5-.6.6-.9 1.4-1 2.2-.8.1-1.6.4-2.2 1-1.6 1.6-1.4 4.4.4 6.2s4.6 2 6.2.4c.6-.6.9-1.4 1-2.2.8-.1 1.6-.4 2.2-1 1.3-1.2 1.5-3.3.5-4.8'/%3E%3Ccircle cx='9.3' cy='14.7' r='1.4'/%3E%3Cpath d='M7.2 17.6l1.2-1.2'/%3E%3C/g%3E%3C/svg%3E">
+<script>
+  // theme before first paint: saved choice, else the system preference
+  (function () {
+    let t = null; try { t = localStorage.getItem("guitab-theme"); } catch (e) {}
+    document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d0f13; --panel: #14171d; --raised: #1b1f27; --hover: #222833; --line: #262c37; --line-strong: #343c4a;
+    --ink: #e9ebef; --muted: #8a93a3; --faint: #5d6574;
+    --accent: #f5a524; --accent-2: #f97316; --accent-ink: #1b1204; --accent-soft: rgba(245, 165, 36, .12);
+    --ok: #4ade80; --err: #f87171; --rec: #ef4444;
+    --paper: #fbf9f4; --paper-line: #e8e3d8;
+    --radius: 12px; --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  }
+  :root[data-theme=light] {
+    color-scheme: light;
+    --bg: #f3ece0; --panel: #fffcf6; --raised: #f8f2e8; --hover: #f1e7d7; --line: #e8dcc8; --line-strong: #d7c5a8;
+    --ink: #2e2318; --muted: #7b6550; --faint: #a8927a;
+    --accent: #d1600c; --accent-2: #e04a1a; --accent-ink: #ffffff; --accent-soft: rgba(209, 96, 12, .11);
+    --ok: #2f7d32; --err: #b42318; --paper: #fffdf8; --shadow: 0 8px 22px rgba(120, 80, 30, .12);
+  }
+  :root[data-theme=light] .seg button.on { background: #ffffff; box-shadow: 0 1px 3px rgba(120, 80, 30, .18); }
+  :root[data-theme=light] header { background: #fbf6ee; }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  svg { display: block; }
+
+  /* layout */
+  .app { display: grid; grid-template-columns: 360px minmax(0, 1fr); grid-template-rows: 60px minmax(0, 1fr); height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 22px; border-bottom: 1px solid var(--line); }
+  .logo { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          display: grid; place-items: center; color: var(--accent-ink); }
+  header h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  header .tag { color: var(--muted); font-size: 13px; }
+  .hdr-tools { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .seg.theme { width: 170px; }
+  .help { position: absolute; top: 58px; right: 18px; z-index: 20; width: 340px; background: var(--panel); border: 1px solid var(--line-strong);
+          border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px; font-size: 13px; }
+  .help h3 { margin: 0 0 8px; font-size: 14px; }
+  .help dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 7px 10px; }
+  .help dt { font-weight: 600; } .help dd { margin: 0; color: var(--muted); }
+  aside { overflow-y: auto; padding: 18px 16px 24px 22px; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid var(--line); }
+  main { min-width: 0; min-height: 0; padding: 18px 22px 18px 18px; display: flex; }
+
+  /* sidebar cards */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .step { margin: 0 0 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .field { margin-top: 14px; }
+  .field > span, .label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+  .hint { color: var(--faint); font-size: 12px; margin-top: 6px; }
+  input[type=text], input[type=number] { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong);
+    border-radius: 8px; background: var(--raised); outline: none; }
+  input[type=text]:focus, input[type=number]:focus { border-color: var(--accent); }
+  input[type=number]::-webkit-inner-spin-button { opacity: .4; }
+
+  .seg { display: flex; padding: 3px; gap: 3px; background: var(--raised); border: 1px solid var(--line); border-radius: 9px; }
+  .seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border: 0; border-radius: 7px;
+                background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 500; }
+  .seg button:hover { color: var(--ink); }
+  .seg button.on { background: var(--hover); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+
+  .drop { margin-top: 12px; border: 1.5px dashed var(--line-strong); border-radius: 10px; padding: 18px 12px; text-align: center;
+          cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop svg { margin: 0 auto 6px; color: var(--muted); }
+  .drop strong { color: var(--accent); font-weight: 600; }
+  .drop .hint { margin-top: 4px; }
+  .chosen { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; background: var(--raised);
+            border: 1px solid var(--line); border-radius: 10px; }
+  .chosen .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .chosen .meta { color: var(--muted); font-size: 12px; }
+  .icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; border: 1px solid transparent;
+              background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+  .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+  .icon-btn.on { color: var(--accent); background: var(--accent-soft); }
+  .icon-btn:disabled { opacity: .35; cursor: default; }
+
+  .recorder { margin-top: 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0 4px; }
+  .rec-btn { width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--line-strong); background: var(--raised); cursor: pointer;
+             display: grid; place-items: center; transition: transform .1s; }
+  .rec-btn:hover { transform: scale(1.04); }
+  .rec-btn i { width: 26px; height: 26px; border-radius: 50%; background: var(--rec); transition: all .15s; }
+  .rec-btn.live { border-color: var(--rec); }
+  .rec-btn.live i { width: 20px; height: 20px; border-radius: 5px; }
+  .rec-time { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; letter-spacing: .02em; }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 22px; }
+  .bars span { width: 4px; height: 3px; border-radius: 2px; background: var(--line-strong); transition: height .08s; }
+  .recorder.live .bars span { background: var(--accent); }
+
+  .select { width: 100%; height: 36px; padding: 0 30px 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer;
+            background: var(--raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a93a3' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+            appearance: none; -webkit-appearance: none; outline: none; }
+  .select:focus { border-color: var(--accent); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stepper { display: flex; align-items: center; height: 36px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--raised); }
+  .stepper button { width: 34px; height: 100%; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; }
+  .stepper button:hover { color: var(--ink); }
+  .stepper output { flex: 1; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; cursor: pointer; }
+  .switch .txt { font-size: 13px; } .switch .txt small { display: block; color: var(--faint); font-size: 12px; }
+  .switch input { display: none; }
+  .switch .knob { width: 38px; height: 22px; border-radius: 11px; background: var(--line-strong); position: relative; flex: none; transition: background .15s; }
+  .switch .knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch input:checked + .knob { background: var(--accent); }
+  .switch input:checked + .knob::after { transform: translateX(16px); }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+  .range-ends { display: flex; justify-content: space-between; color: var(--faint); font-size: 11px; }
+
+  .cta { margin-top: 18px; width: 100%; height: 44px; border: 0; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 15px;
+         color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--accent-2));
+         display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 6px 18px rgba(249, 115, 22, .25); }
+  .cta:disabled { background: var(--raised); color: var(--faint); box-shadow: none; cursor: default; border: 1px solid var(--line); }
+  #status { margin-top: 10px; font-size: 13px; min-height: 18px; color: var(--muted); }
+  #status.err { color: var(--err); }
+
+  .lib-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .lib-head .step { margin: 0; }
+  .lib { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .lib li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .lib li:hover { background: var(--hover); }
+  .lib li.on { background: var(--accent-soft); }
+  .lib .del { width: 28px; height: 28px; opacity: 0; }
+  .lib li:hover .del { opacity: 1; }
+  .lib .del:hover { color: var(--err); }
+  .lib .ic { width: 28px; height: 28px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line); display: grid; place-items: center;
+             color: var(--muted); flex: none; }
+  .lib .n { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib .m { color: var(--faint); font-size: 12px; }
+  .lib .empty { color: var(--faint); font-size: 13px; padding: 4px 2px; cursor: default; }
+  .lib .empty:hover { background: none; }
+
+  /* viewer */
+  .viewer { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line);
+            border-radius: 14px; overflow: hidden; }
+  .vhead { display: flex; align-items: center; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--line); }
+  .vtitle { flex: 1; min-width: 0; }
+  .vtitle h2 { margin: 0; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .chip { font-size: 11px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 20px; padding: 1px 8px; }
+  .vtools { display: flex; align-items: center; gap: 6px; }
+  .vtools .seg { width: 190px; }
+  .close-btn { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 8px; cursor: pointer;
+               border: 1px solid var(--line-strong); background: var(--raised); font-size: 13px; font-weight: 500; }
+  .close-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .sheet-wrap { position: relative; flex: 1; min-height: 0; background: var(--bg); }
+  .sheet-scroll { position: absolute; inset: 0; overflow: auto; padding: 22px; }
+  .paper { background: var(--paper); border-radius: 8px; box-shadow: var(--shadow); min-height: 100%; padding: 18px 10px; color: #16181d; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+             text-align: center; padding: 30px; }
+  .overlay.busy { background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(2px); }
+  .overlay h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .overlay p { margin: 0; color: var(--muted); max-width: 360px; }
+  .overlay p.private { font-size: 12.5px; color: var(--faint); }
+  .progress { width: 260px; max-width: 70%; height: 6px; border-radius: 3px; background: var(--line-strong); overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .spinner { width: 46px; height: 46px; border-radius: 50%; border: 4px solid var(--line-strong); border-top-color: var(--accent);
+             animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-art { color: var(--line-strong); }
+
+  .transport { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); background: var(--panel); }
+  .play { width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; flex: none;
+          color: var(--accent-ink); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .play:disabled { background: var(--raised); color: var(--faint); cursor: default; }
+  .time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; width: 40px; text-align: center; flex: none; }
+  #seek { flex: 1; min-width: 80px; }
+  .transport .icon-btn { border-color: var(--line-strong); color: var(--ink); background: var(--raised); }
+  .transport .icon-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--raised); }
+  .transport .icon-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .speed { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+  .count { color: var(--accent); font-size: 12px; font-weight: 600; }
+  .transport select { height: 32px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--raised); padding: 0 6px; cursor: pointer; }
+  .at-cursor-bar { background: rgba(245, 165, 36, .14); }
+  .at-cursor-beat { background: #ea580c; width: 3px; }
+  .at-highlight * { fill: #c2410c; stroke: #c2410c; }
+  .at-selection div { background: rgba(245, 165, 36, .18); }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto; }
+    aside { border-right: 0; padding: 16px; }
+    main { padding: 0 16px 16px; height: 80vh; }
+    .vtools .seg { width: 150px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="help" id="help" hidden>
+    <h3>Player</h3>
+    <dl>
+      <dt>Play</dt><dd>Play / pause, also with the space bar. Click any note to move the cursor there.</dd>
+      <dt>Seek bar</dt><dd>Drag to jump anywhere; the numbers are the current position and the length.</dd>
+      <dt>Loop</dt><dd>Drag across bars to select them; with Loop on, the selection repeats (no selection: the whole song).</dd>
+      <dt>Metronome</dt><dd>A click on every beat while playing, at the tab's tempo.</dd>
+      <dt>Count-in</dt><dd>One bar of clicks before playback starts (at 80 BPM about 3 s).</dd>
+      <dt>Speed</dt><dd>Slower playback for practice; the pitch does not change.</dd>
+    </dl>
+  </div>
+  <header>
+    <div class="logo"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 2.5l3 3"/><path d="M20 4l-7.6 7.6"/><path d="M11.4 9.8c-1.5-1-3.6-.8-4.8.5-.6.6-.9 1.4-1 2.2-.8.1-1.6.4-2.2 1-1.6 1.6-1.4 4.4.4 6.2s4.6 2 6.2.4c.6-.6.9-1.4 1-2.2.8-.1 1.6-.4 2.2-1 1.3-1.2 1.5-3.3.5-4.8"/><circle cx="9.3" cy="14.7" r="1.4"/><path d="M7.2 17.6l1.2-1.2"/></svg></div>
+    <h1>guitab</h1><span class="tag">guitar audio → tab</span>
+    <div class="hdr-tools">
+      <button class="icon-btn" id="helpBtn" title="How the player works"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/></svg></button>
+      <div class="seg theme" id="theme">
+        <button data-v="dark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Dark</button>
+        <button data-v="light"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Light</button>
+      </div>
+    </div>
+  </header>
+
+  <aside>
+    <section class="card">
+      <h2 class="step">Audio</h2>
+      <div class="seg">
+        <button id="srcFile" class="on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Upload</button>
+        <button id="srcMic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Record</button>
+      </div>
+      <div id="filePane">
+        <div class="drop" id="drop">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <div>Drop an audio or video file, or <strong>browse</strong></div>
+          <div class="hint">wav · mp3 · m4a · flac · mov · mp4 …</div>
+        </div>
+        <input id="file" type="file" accept="audio/*,video/*" hidden>
+      </div>
+      <div id="micPane" hidden>
+        <div class="recorder" id="recorder">
+          <button class="rec-btn" id="recBtn" title="Start / stop recording"><i></i></button>
+          <div class="rec-time" id="recTime">0:00</div>
+          <div class="bars" id="bars"></div>
+          <div class="hint">No noise suppression or auto gain: the guitar is recorded as it sounds.</div>
+        </div>
+      </div>
+      <div class="chosen" id="chosen" hidden>
+        <button class="icon-btn" id="previewBtn" title="Listen"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+        <div style="min-width:0;flex:1"><div class="name" id="chosenName"></div><div class="meta" id="chosenMeta"></div></div>
+        <button class="icon-btn" id="clearAudio" title="Remove"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <audio id="preview" hidden></audio>
+      <label class="field"><span>Name</span><input id="name" type="text" placeholder="my-song"></label>
+    </section>
+
+    <section class="card">
+      <h2 class="step">Options</h2>
+      <label><span class="label">Model</span><select id="model" class="select"></select></label>
+      <div class="hint" id="modelInfo"></div>
+      <div class="two field">
+        <div><span class="label">Capo</span>
+          <div class="stepper"><button id="capoDown" title="Lower">−</button><output id="capo">0</output><button id="capoUp" title="Higher">+</button></div></div>
+        <label><span class="label">Tempo (BPM)</span><input id="tempo" type="number" min="30" max="300" placeholder="auto"></label>
+      </div>
+      <div class="hint">Capo 0 = no capo · empty tempo follows the detected beats</div>
+      <div class="field">
+        <span class="label">Note sensitivity · <span id="onsetVal"></span></span>
+        <input id="onset" type="range" min="0.3" max="0.8" step="0.05" value="0.6">
+        <div class="range-ends"><span>more notes</span><span>fewer, surer notes</span></div>
+      </div>
+      <div class="field"><span class="label">Fingering</span>
+        <div class="seg" id="fingering"><button data-v="model" class="on">As played</button><button data-v="auto">Tidy</button><button data-v="low">Low position</button></div></div>
+      <div class="field"><span class="label">Rhythm grid</span>
+        <div class="seg" id="grid"><button data-v="240" class="on">16th notes</button><button data-v="120">32nd notes</button></div></div>
+      <button class="cta" id="go" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h10M4 12h16M4 17h8"/><path d="M17 15l3 2-3 2z" fill="currentColor"/></svg>Transcribe</button>
+      <div id="status"></div>
+    </section>
+
+    <section class="card">
+      <div class="lib-head"><h2 class="step">Your tabs</h2>
+        <button class="icon-btn" id="openGp" title="Open a .gp5 / .gp file"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button></div>
+      <input id="gpFile" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx" hidden>
+      <ul class="lib" id="lib"></ul>
+    </section>
+  </aside>
+
+  <main>
+    <section class="viewer">
+      <div class="vhead">
+        <div class="vtitle"><h2 id="title">No tab loaded</h2><div class="chips" id="chips"></div></div>
+        <div class="vtools">
+          <div class="seg" id="view"><button data-v="Tab" class="on">Tab</button><button data-v="ScoreTab">Score + tab</button></div>
+          <button class="icon-btn" id="zoomOut" title="Smaller"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/></svg></button>
+          <button class="icon-btn" id="zoomIn" title="Larger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M11 8v6M20 20l-4-4"/></svg></button>
+          <button class="close-btn" id="closeTab" hidden title="Close this tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg>Close</button>
+          <a id="download" hidden title="Download .gp5"><span class="icon-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></svg></span></a>
+        </div>
+      </div>
+      <div class="sheet-wrap">
+        <div class="sheet-scroll" id="scroll"><div class="paper" id="paper" hidden><div id="at"></div></div></div>
+        <div class="overlay" id="emptyState">
+          <svg class="empty-art" width="120" height="70" viewBox="0 0 120 70" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10h112M4 22h112M4 34h112M4 46h112M4 58h112"/><text x="28" y="27" font-size="11" fill="currentColor" stroke="none">0</text><text x="52" y="39" font-size="11" fill="currentColor" stroke="none">2</text><text x="76" y="15" font-size="11" fill="currentColor" stroke="none">3</text><text x="94" y="51" font-size="11" fill="currentColor" stroke="none">1</text></svg>
+          <h3>Your tab will appear here</h3>
+          <p>Upload or record a recording and press Transcribe, or open a .gp5 from “Your tabs”. Click any note to play from there.</p>
+          <p class="private">Everything runs in your browser: the audio never leaves your device.</p>
+        </div>
+        <div class="overlay busy" id="busy" hidden>
+          <div class="spinner"></div>
+          <h3 id="busyTitle">Transcribing…</h3>
+          <p id="busyText"></p>
+          <div class="progress" id="busyBar" hidden><i></i></div>
+        </div>
+      </div>
+      <div class="transport">
+        <button class="play" id="play" disabled title="Play / pause (space)"><svg id="playIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="icon-btn" id="stop" disabled title="Back to the start"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+        <span class="count" id="countMsg" hidden>Count-in…</span>
+        <span class="time" id="cur">0:00</span>
+        <input id="seek" type="range" min="0" max="1000" value="0" disabled>
+        <span class="time" id="end">0:00</span>
+        <label class="speed" title="Playback speed (the pitch does not change)"><span>Speed</span><select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option></select></label>
+        <button class="icon-btn" id="metro" title="Metronome"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6l4 18H5z"/><path d="M12 15l5-8"/></svg></button>
+        <button class="icon-btn" id="countin" title="Count-in"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg></button>
+        <button class="icon-btn" id="loop" title="Loop (drag over the tab to choose a range)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg></button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/alphaTab.min.js"></script>
+<script>
+const CDN = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.8.4/dist/";
+const $ = (id) => document.getElementById(id);
+const fmt = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>';
+let audioBlob = null, audioName = "", models = [], model = null, endTime = 0, seeking = false, activeId = null;
+let startedAt = -1;  // playback position when a count-in started (-1 = none)
+
+function setStatus(msg, cls = "") { $("status").textContent = msg; $("status").className = cls; }
+function segment(el, onChange) {
+  el.querySelectorAll("button").forEach((b) => b.onclick = () => {
+    el.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    if (onChange) onChange(b.dataset.v);
+  });
+}
+const segValue = (el) => el.querySelector("button.on").dataset.v;
+
+// ---------- tab viewer and player (alphaTab) ----------
+const api = new alphaTab.AlphaTabApi($("at"), {
+  core: { fontDirectory: CDN + "font/" },
+  display: { staveProfile: alphaTab.StaveProfile.Tab, scale: 1.0 },
+  player: { playerMode: alphaTab.PlayerMode.EnabledSynthesizer, soundFont: CDN + "soundfont/sonivox.sf2",
+            scrollElement: $("scroll"), enableCursor: true, enableUserInteraction: true },
+});
+let busyFor = null;  // "transcribe" | "render" | null
+function busy(on, title, text) {
+  $("busy").hidden = !on;
+  if (on) { $("busyTitle").textContent = title; $("busyText").textContent = text; }
+}
+api.renderStarted.on(() => { if (busyFor === "load") { busyFor = "render"; busy(true, "Drawing the tab…", ""); } });
+api.renderFinished.on(() => { if (busyFor === "render") { busyFor = null; busy(false); } });
+api.scoreLoaded.on(() => { $("emptyState").hidden = true; $("paper").hidden = false; $("closeTab").hidden = false; });
+$("closeTab").onclick = () => {
+  api.stop();
+  $("paper").hidden = true; $("emptyState").hidden = false; $("closeTab").hidden = true; $("download").hidden = true;
+  $("play").disabled = $("stop").disabled = $("seek").disabled = true;
+  $("seek").value = 0; $("cur").textContent = $("end").textContent = "0:00";
+  setHeader("No tab loaded", []); activeId = null; markActive();
+};
+api.playerReady.on(() => { if (!$("paper").hidden) $("play").disabled = $("stop").disabled = $("seek").disabled = false; });
+api.scoreLoaded.on(() => { if (api.isReadyForPlayback) $("play").disabled = $("stop").disabled = $("seek").disabled = false; });
+api.playerStateChanged.on((e) => {
+  const playing = e.state === alphaTab.synth.PlayerState.Playing;
+  $("playIcon").innerHTML = playing ? PAUSE : PLAY;
+  if (!playing) { startedAt = -1; $("countMsg").hidden = true; }
+});
+api.playerPositionChanged.on((e) => {
+  endTime = e.endTime;
+  $("cur").textContent = fmt(e.currentTime); $("end").textContent = fmt(e.endTime);
+  if (!seeking && e.endTime > 0) $("seek").value = Math.round(1000 * e.currentTime / e.endTime);
+  if (startedAt >= 0 && e.currentTime > startedAt + 50) { startedAt = -1; $("countMsg").hidden = true; }
+});
+api.error.on((e) => { busyFor = null; busy(false); setStatus("Viewer error: " + (e.message || e), "err"); });
+$("play").onclick = () => {
+  if (api.playerState !== alphaTab.synth.PlayerState.Playing && $("countin").classList.contains("on")) {
+    startedAt = api.timePosition; $("countMsg").hidden = false;
+  }
+  api.playPause();
+};
+$("stop").onclick = () => api.stop();
+$("seek").oninput = () => { seeking = true; $("cur").textContent = fmt(endTime * $("seek").value / 1000); };
+$("seek").onchange = () => { api.timePosition = endTime * $("seek").value / 1000; seeking = false; };
+$("speed").onchange = (e) => { api.playbackSpeed = parseFloat(e.target.value); };
+const toggle = (btn, apply) => { btn.onclick = () => { btn.classList.toggle("on"); apply(btn.classList.contains("on")); }; };
+toggle($("metro"), (on) => { api.metronomeVolume = on ? 1 : 0; });
+toggle($("countin"), (on) => { api.countInVolume = on ? 1 : 0; });
+toggle($("loop"), (on) => { api.isLooping = on; });
+segment($("view"), (v) => { api.settings.display.staveProfile = alphaTab.StaveProfile[v]; api.updateSettings(); api.render(); });
+let scale = 1.0, zoomTimer = null;  // several clicks -> one redraw
+const zoom = (d) => {
+  scale = Math.min(2, Math.max(0.5, +(scale + d).toFixed(2)));
+  clearTimeout(zoomTimer);
+  zoomTimer = setTimeout(() => { api.settings.display.scale = scale; api.updateSettings(); api.render(); }, 350);
+};
+$("zoomIn").onclick = () => zoom(0.1); $("zoomOut").onclick = () => zoom(-0.1);
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && !["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(document.activeElement.tagName) && !$("play").disabled) {
+    e.preventDefault(); api.playPause();
+  }
+});
+function setHeader(title, chips) {
+  $("title").textContent = title;
+  $("chips").innerHTML = chips.filter(Boolean).map((c) => `<span class="chip">${c}</span>`).join("");
+}
+$("openGp").onclick = () => $("gpFile").click();
+$("gpFile").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  setHeader(f.name.replace(/\.[^.]+$/, ""), ["opened file"]);
+  busyFor = "load";
+  api.load(new Uint8Array(await f.arrayBuffer()));
+  $("download").hidden = true; activeId = null; markActive();
+  e.target.value = "";
+};
+
+// ---------- audio: upload or record ----------
+function pickSource(mic) {
+  $("srcFile").classList.toggle("on", !mic); $("srcMic").classList.toggle("on", mic);
+  $("filePane").hidden = mic; $("micPane").hidden = !mic;
+}
+$("srcFile").onclick = () => pickSource(false);
+$("srcMic").onclick = () => pickSource(true);
+function setAudio(blob, filename, meta) {
+  audioBlob = blob; audioName = filename;
+  $("preview").src = URL.createObjectURL(blob);
+  $("chosen").hidden = false; $("chosenName").textContent = filename; $("chosenMeta").textContent = meta || "";
+  $("preview").onloadedmetadata = () => { if (isFinite($("preview").duration)) $("chosenMeta").textContent = (meta ? meta + " · " : "") + fmt($("preview").duration * 1000); };
+  $("name").value = filename.replace(/\.[^.]+$/, "");
+  $("go").disabled = !model;
+}
+$("clearAudio").onclick = () => { audioBlob = null; $("chosen").hidden = true; $("preview").pause(); $("go").disabled = true; };
+$("previewBtn").onclick = () => { const a = $("preview"); a.paused ? a.play() : a.pause(); };
+$("preview").onplay = () => { $("previewBtn").innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">${PAUSE}</svg>`; };
+$("preview").onpause = () => { $("previewBtn").innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">${PLAY}</svg>`; };
+$("drop").onclick = () => $("file").click();
+$("file").onchange = (e) => { const f = e.target.files[0]; if (f) setAudio(f, f.name, "file"); e.target.value = ""; };
+["dragenter", "dragover"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) setAudio(f, f.name, "file"); });
+
+$("bars").innerHTML = "<span></span>".repeat(24);
+let recorder = null, recTimer = null, meterRaf = null;
+$("recBtn").onclick = async () => {
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (err) { setStatus("Microphone not available: " + err.message, "err"); return; }
+  const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+  recorder = new MediaRecorder(stream, type ? { mimeType: type } : {});
+  const chunks = [], bars = [...$("bars").children], ctx = new AudioContext(), analyser = ctx.createAnalyser();
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  const data = new Uint8Array(analyser.fftSize), levels = new Array(bars.length).fill(0);
+  const meter = () => {
+    analyser.getByteTimeDomainData(data);
+    levels.shift(); levels.push(Math.max(...data.map((v) => Math.abs(v - 128))) / 128);
+    bars.forEach((b, i) => { b.style.height = Math.max(3, Math.min(22, levels[i] * 60)) + "px"; });
+    meterRaf = requestAnimationFrame(meter);
+  };
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop()); ctx.close();
+    clearInterval(recTimer); cancelAnimationFrame(meterRaf);
+    bars.forEach((b) => { b.style.height = "3px"; });
+    $("recorder").classList.remove("live"); $("recBtn").classList.remove("live");
+    const ext = recorder.mimeType.includes("mp4") ? ".m4a" : ".webm";
+    const stamp = new Date().toTimeString().slice(0, 5).replace(":", "");
+    setAudio(new Blob(chunks, { type: recorder.mimeType }), `recording-${stamp}${ext}`, "recording");
+  };
+  meter();
+  const t0 = Date.now();
+  $("recTime").textContent = "0:00";
+  recTimer = setInterval(() => { $("recTime").textContent = fmt(Date.now() - t0); }, 250);
+  recorder.start();
+  $("recorder").classList.add("live"); $("recBtn").classList.add("live");
+};
+
+// ---------- options ----------
+let capo = 0;
+const setCapo = (v) => { capo = Math.min(12, Math.max(0, v)); $("capo").textContent = capo; };
+$("capoUp").onclick = () => setCapo(capo + 1); $("capoDown").onclick = () => setCapo(capo - 1);
+$("onset").oninput = () => { $("onsetVal").textContent = $("onset").value; };
+$("onset").oninput();
+segment($("fingering")); segment($("grid"));
+
+let beatModel = null;
+async function loadModels() {
+  const manifest = await (await fetch("models.json")).json();
+  models = manifest.tab_models; beatModel = manifest.beat_model;
+  $("model").innerHTML = models.map((m) => `<option value="${m.id}">${m.label.split(" · ")[0]}</option>`).join("");
+  $("model").onchange = () => selectModel($("model").value);
+  if (models.length) selectModel(models[0].id);
+}
+function selectModel(id) {
+  model = id;
+  const m = models.find((x) => x.id === id);
+  $("modelInfo").textContent = `${m.label.split(" · ").slice(1).join(" · ")} · ${m.mb} MB, downloaded once`;
+  $("go").disabled = !audioBlob;
+}
+
+// ---------- your tabs (kept in this browser, IndexedDB) ----------
+const db = new Promise((resolve, reject) => {
+  const req = indexedDB.open("guitab", 1);
+  req.onupgradeneeded = () => req.result.createObjectStore("tabs", { keyPath: "id" });
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+async function store(mode, fn) {
+  const tx = (await db).transaction("tabs", mode), req = fn(tx.objectStore("tabs"));
+  return new Promise((resolve, reject) => { tx.oncomplete = () => resolve(req.result); tx.onerror = () => reject(tx.error); });
+}
+let runs = [];
+function chipsOf(r) { return [r.model, r.capo ? "capo " + r.capo : "", r.tempo + " BPM", r.notes + " notes"]; }
+function markActive() { [...$("lib").children].forEach((li) => li.classList.toggle("on", li.dataset.id === activeId)); }
+let downloadUrl = null;
+function showTab(r) {
+  setHeader(r.name, chipsOf(r));
+  if (busyFor !== "render") busyFor = "load";
+  api.load(r.gp5);
+  if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+  downloadUrl = URL.createObjectURL(new Blob([r.gp5], { type: "application/octet-stream" }));
+  $("download").hidden = false; $("download").href = downloadUrl; $("download").download = r.name + ".gp5";
+}
+async function loadLibrary() {
+  try { runs = (await store("readonly", (s) => s.getAll())).sort((a, b) => b.id.localeCompare(a.id)); }
+  catch (e) { runs = []; }
+  $("lib").innerHTML = runs.length ? runs.map((r) => `<li data-id="${r.id}"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>
+    <span style="min-width:0;flex:1"><div class="n"></div><div class="m">${r.model}${r.capo ? " · capo " + r.capo : ""} · ${r.created.slice(5)}</div></span>
+    <button class="icon-btn del" title="Delete this tab"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></li>`).join("")
+    : `<li class="empty">Transcriptions appear here.</li>`;
+  [...$("lib").children].forEach((li) => {
+    if (!li.dataset.id) return;
+    const r = runs.find((x) => x.id === li.dataset.id);
+    li.querySelector(".n").textContent = r.name;
+    li.onclick = () => { activeId = r.id; markActive(); showTab(r); };
+    li.querySelector(".del").onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete “${r.name}” (${r.created}) from this browser?`)) return;
+      await store("readwrite", (s) => s.delete(r.id));
+      if (activeId === r.id) $("closeTab").click();
+      loadLibrary();
+    };
+  });
+  markActive();
+}
+
+// ---------- transcribe (in a Web Worker) ----------
+// Any audio or video file the browser can decode -> mono 22.05 kHz samples (as ffmpeg -ac 1 -ar 22050).
+async function decodeAudio(blob) {
+  const ctx = new OfflineAudioContext(1, 1, 22050);
+  const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+  const out = new Float32Array(buf.length);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const ch = buf.getChannelData(c);
+    for (let i = 0; i < out.length; i++) out[i] += ch[i] / buf.numberOfChannels;
+  }
+  return out;
+}
+let worker = null;
+function runWorker(audio, opts) {
+  worker = worker || new Worker("js/worker.js", { type: "module" });
+  return new Promise((resolve, reject) => {
+    worker.onmessage = ({ data }) => {
+      if (data.type === "progress") {
+        busy(true, data.text, opts.detail);
+        $("busyBar").hidden = false; $("busyBar").firstChild.style.width = Math.round(100 * data.frac) + "%";
+      } else if (data.type === "done") resolve(data.result);
+      else if (data.type === "error") reject(new Error(data.message));
+    };
+    worker.onerror = (e) => reject(new Error(e.message || "the transcription worker failed to start"));
+    worker.postMessage({ type: "transcribe", audio, base: location.href, opts }, [audio.buffer]);
+  });
+}
+const pad = (n) => String(n).padStart(2, "0");
+const stamp = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+$("go").onclick = async () => {
+  if (!audioBlob || !model) return;
+  const m = models.find((x) => x.id === model);
+  const name = ($("name").value || audioName.replace(/\.[^.]+$/, "")).replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "recording";
+  const opts = { model: m, beatModel, capo, tempo: $("tempo").value || "auto", onset: parseFloat($("onset").value),
+    fingering: segValue($("fingering")), grid: parseInt(segValue($("grid")), 10), name,
+    detail: `${m.label.split(" · ")[0]}${capo ? ", capo " + capo : ""}`,
+    backend: new URLSearchParams(location.search).get("backend") }; // ?backend=wasm: no WebGPU
+  $("go").disabled = true; setStatus("");
+  busyFor = "transcribe";
+  busy(true, "Reading the audio…", opts.detail);
+  try {
+    const audio = await decodeAudio(audioBlob);
+    const out = await runWorker(audio, opts);
+    $("busyBar").hidden = true;
+    const now = new Date();
+    const r = { id: `${stamp(now)}_${name}`, name, model: m.id, capo, tempo: out.tempo, notes: out.notes,
+      beats_per_measure: out.beats_per_measure, seconds: out.seconds, backend: out.backend,
+      created: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
+      gp5: out.gp5 };
+    try { await store("readwrite", (s) => s.put(r)); } catch (e) { console.warn("not saved:", e); }
+    setStatus(`Done in ${out.seconds} s (${out.backend === "webgpu" ? "WebGPU" : "WebAssembly"}) · ${out.notes} notes · ${out.tempo} BPM`);
+    busyFor = "render"; busy(true, "Drawing the tab…", "");
+    activeId = r.id;
+    showTab(r);
+    loadLibrary();
+  } catch (err) {
+    busyFor = null; busy(false); $("busyBar").hidden = true;
+    setStatus(err.message, "err");
+  } finally {
+    $("go").disabled = !audioBlob;
+  }
+};
+
+const theme = $("theme");
+theme.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === document.documentElement.dataset.theme));
+segment(theme, (t) => {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("guitab-theme", t); } catch (e) {}
+});
+$("helpBtn").onclick = (e) => { e.stopPropagation(); $("help").hidden = !$("help").hidden; };
+document.addEventListener("click", (e) => { if (!$("help").hidden && !$("help").contains(e.target)) $("help").hidden = true; });
+
+loadModels().then(loadLibrary);
+</script>
+</body>
+</html>

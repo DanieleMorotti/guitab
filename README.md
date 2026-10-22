@@ -101,6 +101,26 @@ The tab appears in an [alphaTab](https://www.alphatab.net) viewer with playback:
 
 Every result is kept in `out/app/` and listed under *Tabs*. The server only listens on this computer; the viewer is loaded from a CDN, so the page needs internet.
 
+### Browser version (no Python, no server)
+
+`docs/` is a static page that does the whole transcription in the browser: the audio never leaves the device. The models
+run with [ONNX Runtime Web](https://onnxruntime.ai) (WebGPU when the browser has it, else WebAssembly), and the rest of the
+pipeline (constant-Q spectrogram, note extraction, beat grid, fingering, .gp5 writer) is ported to JavaScript
+(`docs/js/`). On a test song its .gp5 is byte-identical to the Python pipeline's (with the same beat tracker). Each model
+is downloaded the first time it is used and kept in the browser cache.
+
+```bash
+.venv/bin/python scripts/export_web.py      # docs/models/*.onnx, docs/models.json, docs/assets/dsp.json (pip install -e '.[web]')
+python3 -m http.server 8800 -d docs         # then open http://127.0.0.1:8800
+```
+Differences from the local app: no fuller-chords option (the tab language model is not ported); beats come from the small
+Beat This! model (2M parameters instead of 20M; same tempo on 8 of 9 test recordings), run on WebAssembly because its
+WebGPU output differs; tabs are kept in the browser (IndexedDB). `?backend=wasm` in the URL turns WebGPU off.
+
+To publish it with GitHub Pages (Settings → Pages → deploy from the `docs/` folder), the .onnx files must be hosted
+elsewhere (they are not versioned, and E15/E19 are 84 MB): upload them to a host that allows cross-origin downloads
+(e.g. a Hugging Face model repository) and put their full URLs in `docs/models.json`.
+
 ## 3. How it works
 
 1. **Features** (`guitab/audio.py`): 22.05 kHz mono audio becomes a constant-Q spectrogram with 36 bins per octave over 8 octaves, hop 256.
