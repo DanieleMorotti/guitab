@@ -14,6 +14,8 @@ Notes are extracted per string:
 With a capo (apply_capo, D6), notes below the capo move to another string that can play their pitch.
 """
 
+import json
+
 import numpy as np
 import torch
 
@@ -26,10 +28,36 @@ DEFAULT_PARAMS = {"onset": 0.6, "frame": 0.6, "min_frames": 3, "legato": 8, "orp
                   "reattack": 0.75}
 
 
+def read_checkpoint(path, weights=True):
+    """{"model": state dict, "size", "decoding", ...} from a .safetensors file (the published weights; the other fields
+    are JSON values in its metadata) or a .pt training checkpoint (read with weights_only=True: tensors and plain values
+    only, no code). weights=False reads only the other fields."""
+    path = str(path)
+    if path.endswith(".safetensors"):
+        from safetensors import safe_open
+        from safetensors.torch import load_file
+
+        with safe_open(path, "pt") as f:
+            ckpt = {k: json.loads(v) for k, v in (f.metadata() or {}).items()}
+        if weights:
+            ckpt["model"] = load_file(path)
+        return ckpt
+    return torch.load(path, map_location="cpu", mmap=not weights, weights_only=True)
+
+
+def save_safetensors(ckpt, path):
+    """Write a checkpoint dict as read_checkpoint returns it to a .safetensors file (weights plus JSON metadata)."""
+    from safetensors.torch import save_file
+
+    meta = {k: json.dumps(v) for k, v in ckpt.items() if k not in ("model", "opt")}
+    save_file({k: v.contiguous() for k, v in ckpt["model"].items()}, str(path), metadata=meta)
+
+
 def load_model(checkpoint, device):
-    """The model in eval mode; model.decoding = the checkpoint's own note-extraction settings (DEFAULT_PARAMS keys, e.g.
-    onset .5 for the distilled models), applied on top of DEFAULT_PARAMS and under any explicit params."""
-    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    """The model in eval mode, from a .safetensors or .pt checkpoint; model.decoding = the checkpoint's own
+    note-extraction settings (DEFAULT_PARAMS keys, e.g. onset .45 for E25), applied on top of DEFAULT_PARAMS and under
+    any explicit params."""
+    ckpt = read_checkpoint(checkpoint)
     model = build_model(ckpt["size"])
     model.load_state_dict(ckpt["model"])
     model.decoding = ckpt.get("decoding", {})
@@ -37,8 +65,8 @@ def load_model(checkpoint, device):
 
 
 def checkpoint_decoding(checkpoint):
-    """DEFAULT_PARAMS with the checkpoint's own settings applied, without building the model (memory-mapped read)."""
-    return {**DEFAULT_PARAMS, **torch.load(checkpoint, map_location="cpu", mmap=True, weights_only=False).get("decoding", {})}
+    """DEFAULT_PARAMS with the checkpoint's own settings applied, without loading the weights."""
+    return {**DEFAULT_PARAMS, **read_checkpoint(checkpoint, weights=False).get("decoding", {})}
 
 
 @torch.no_grad()

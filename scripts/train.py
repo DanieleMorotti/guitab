@@ -53,7 +53,7 @@ from guitab.data import load_split  # noqa: E402
 from guitab.evaluation import evaluate_gaps, evaluate_guitarset, gaps_ref, ref_notes  # noqa: E402
 from guitab.guitar import N_CLASSES, N_FRETS  # noqa: E402
 from guitab.guitarset import jams_path  # noqa: E402
-from guitab.inference import load_model  # noqa: E402
+from guitab.inference import load_model, read_checkpoint  # noqa: E402
 from guitab.model import SIZES, build_model, count_params, pitch_targets  # noqa: E402
 
 
@@ -222,7 +222,7 @@ def main():
 
     model = build_model(args.size)
     if args.init:
-        model.load_state_dict(torch.load(args.init, map_location="cpu", weights_only=False)["model"])
+        model.load_state_dict(read_checkpoint(args.init)["model"])  # .pt or .safetensors
         print(f"initialised from {args.init}", flush=True)
     model = model.to(device)
     print(f"model {args.size}: {count_params(model) / 1e6:.1f}M params", flush=True)

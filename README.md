@@ -52,20 +52,20 @@ The weights are on Hugging Face at [danmor/guitab](https://huggingface.co/danmor
 
 | File | Model | Size |
 |---|---|---|
-| `guitab_e25.pt` | E25, the default | 24 MB |
-| `guitab_e24.pt` | E24, the tiny model | 11 MB |
-| `guitab_e19.pt` | E19 | 91 MB |
-| `tablm.pt` | the tab language model behind `--music_lm` | 13 MB |
+| `guitab_e25.safetensors` | E25, the default | 24 MB |
+| `guitab_e24.safetensors` | E24, the tiny model | 11 MB |
+| `guitab_e19.safetensors` | E19 | 91 MB |
+| `tablm.safetensors` | the tab language model behind `--music_lm` | 13 MB |
 | `beat_this_final0_int8.onnx` | the [Beat This!](https://github.com/CPJKU/beat_this) beat tracker with int8 weights, shared with the browser version | 21 MB |
 
-Put the `.pt` and `beat_this_final0_int8.onnx` files in `weights/`, either from the Hugging Face page or with:
+Put the `.safetensors` and `beat_this_final0_int8.onnx` files in `weights/`, either from the Hugging Face page or with:
 
 ```bash
 uv pip install --python .venv/bin/python huggingface_hub
 .venv/bin/hf download danmor/guitab --local-dir weights
 ```
 
-`guitab` uses **E25**, and falls back to E15 (`runs/tabmodel_mid_close/best.pt`, section 4) when E25 is missing. Pass `--checkpoint` to use another model. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file. Without `beat_this_final0_int8.onnx`, the beats come from the PyTorch Beat This! model (downloaded on first use), whose results are close but not identical to the browser version's.
+`guitab` uses **E25**, and falls back to E15 (`runs/tabmodel_mid_close/best.pt`, section 4) when E25 is missing. Pass `--checkpoint` to use another model. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file; every command reads both formats, and `scripts/export_weights.py` writes the published `.safetensors` files from your own checkpoints. Without `beat_this_final0_int8.onnx`, the beats come from the PyTorch Beat This! model (downloaded on first use), whose results are close but not identical to the browser version's.
 
 ## 2. Transcribe a recording
 
@@ -117,7 +117,7 @@ python3 -m http.server 8800 -d docs         # then open http://127.0.0.1:8800
 
 Compared with the local app there is **no fuller-chords option**: the tab language model would be quite slow in the browser, so it is only in the local web app. The beat tracker runs on WebAssembly, and the tabs are kept in the browser (IndexedDB). A 2:23 song takes about 22 s. Audio and video files are decoded by the browser itself (WAV, MP3, FLAC, OGG, M4A, and the audio track of MP4 / MOV / WebM videos in Chrome, Edge and Safari). `?backend=wasm` in the URL turns WebGPU off.
 
-It is published with GitHub Pages (Settings → Pages → deploy from the `docs/` folder of `main`). The .onnx files stay out of git: `docs/models.json` points at the Hugging Face repository (`export_web.py --base`), where the files of `docs/models/` are uploaded next to the .pt weights.
+It is published with GitHub Pages (Settings → Pages → deploy from the `docs/` folder of `main`). The .onnx files stay out of git: `docs/models.json` points at the Hugging Face repository (`export_web.py --base`), where the files of `docs/models/` are uploaded next to the .safetensors weights.
 
 ## 3. Architecture
 

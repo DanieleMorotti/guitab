@@ -53,8 +53,15 @@ class TabLM(nn.Module):
 
 
 def load_tablm(path, device):
+    """The tab LM from a .safetensors file (published) or a .pt state dict (scripts/train_tablm.py)."""
+    if str(path).endswith(".safetensors"):
+        from safetensors.torch import load_file
+
+        state = load_file(str(path))
+    else:
+        state = torch.load(path, map_location="cpu", weights_only=True)
     lm = TabLM()
-    lm.load_state_dict(torch.load(path, map_location="cpu"))
+    lm.load_state_dict(state)
     return lm.to(device).eval()
 
 

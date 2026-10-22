@@ -17,6 +17,7 @@ dependencies = [
     "soundfile>=0.12",
     "pyguitarpro>=0.9",
     "onnxruntime>=1.20",  # the int8 beat tracker shared with the browser version (guitab/tab.py)
+    "safetensors>=0.4",  # the published weights (guitab/inference.py)
     "beat-this @ git+https://github.com/CPJKU/beat_this@b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
 ]
 
