@@ -963,6 +963,7 @@ Expectations: small and gru within ~1 point of E19; tcn similar or slightly lowe
 | custom-dataset held-out, string+fret (19) | .548 | **.617** | .611 | wins 10/19, -.005, p=.62 | wins 15/19, +.063, p=.001 |
 
 - Model time over all four sets (predict only, MPS): E19 138 s, E20 57 s (2.4x faster); 6.2M vs 23.8M parameters.
+- Note-extraction thresholds re-tuned on GuitarSet validation (`evaluate.py --tune`, grid widened to onset / frame .3–.7, 150 settings), for E20 and E19: the defaults stay. E20's best (frame .7) beats the defaults by +.0003 string/fret F1 (noise), and E19's best is the defaults. On the validation chunks E20 and E19 are level (string/fret .739 / .739, pitch .767 / .769).
 
 **Conclusion:** at a quarter of the parameters and 2.4x the speed, E20 is not significantly different from E19 on degraded GuitarSet, GAPS and the custom held-out set; it loses ~1 point on clean GuitarSet (significant, p=.03). The 19M transformer buys about one point on clean audio. Not adopted (yet): kept as the light candidate until the GRU / TCN / tiny runs.
 
