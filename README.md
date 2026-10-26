@@ -56,7 +56,8 @@ The weights are on Hugging Face at [danmor/guitab](https://huggingface.co/danmor
 | `guitab_e24.safetensors` | E24, the tiny model | 11 MB |
 | `guitab_e19.safetensors` | E19 | 91 MB |
 | `tablm.safetensors` | the tab language model behind `--music_lm` | 13 MB |
-| `beat_this_final0_int8.onnx` | the [Beat This!](https://github.com/CPJKU/beat_this) beat tracker with int8 weights, shared with the browser version | 21 MB |
+| `beat_this_small0_int8.onnx` | the [Beat This!](https://github.com/CPJKU/beat_this) beat tracker (small model) with int8 weights, shared with the browser version | 3.6 MB |
+| `beat_this_final0_int8.onnx` | the larger Beat This! model, used only if you select it (below) | 21 MB |
 
 **Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (E25 and the beat tracker for the first transcription, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
 
@@ -65,7 +66,7 @@ uv pip install --python .venv/bin/python huggingface_hub
 .venv/bin/hf download danmor/guitab --local-dir weights
 ```
 
-`guitab` uses **E25**. Pass `--checkpoint` to use another model, e.g. `--checkpoint weights/guitab_e19.safetensors`. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file, and if you train only E15 (section 4) it becomes the default; every command reads both formats, and `scripts/export_weights.py` writes the published `.safetensors` files from your own checkpoints. If `beat_this_final0_int8.onnx` cannot be downloaded, the beats come from the PyTorch Beat This! model (from `data/models/beat_this-final0.ckpt`, else downloaded by the Beat This! package), whose results are close but not identical to the browser version's.
+`guitab` uses **E25**. Pass `--checkpoint` to use another model, e.g. `--checkpoint weights/guitab_e19.safetensors`. A model you train yourself (`runs/<run>/best.pt`) takes precedence over the downloaded file, and if you train only E15 (section 4) it becomes the default; every command reads both formats, and `scripts/export_weights.py` writes the published `.safetensors` files from your own checkpoints. The beat tracker is set by `BEAT_MODEL` in `guitab/paths.py`: `small0` (the default) or `final0`, 6 times larger and about 3 points better on the rhythm of steady-tempo songs, the same on free-tempo ones (`EXPERIMENTS.md`, B1); `scripts/export_web.py` exports the same one for the browser. If its `.onnx` file cannot be downloaded, the beats come from the PyTorch Beat This! model (from `data/models/`, else downloaded by the Beat This! package), whose results are close but not identical to the browser version's.
 
 ## 2. Transcribe a recording
 
@@ -106,7 +107,7 @@ Every result is kept in `out/app/` and listed under *Tabs*. The server only list
 
 `docs/` is a static page that does the whole transcription in the browser, so *the audio never leaves the device*. The models run with [ONNX Runtime Web](https://onnxruntime.ai) (WebGPU when the browser has it, else WebAssembly), and the rest of the pipeline (constant-Q spectrogram, note extraction, beat grid, fingering, .gp5 writer) is ported to JavaScript in `docs/js/`. It gives the same .gp5 as the Python pipeline, **byte for byte**: both use the same models and beat tracker, checked on four recordings (fingerstyle, classical, electric) at 22.05 kHz. Audio at other sample rates is resampled by the browser instead of librosa, so its results are close but not identical.
 
-**Try it at [danielemorotti.github.io/guitab](https://danielemorotti.github.io/guitab/).** It offers E25 (20 MB), E19 (84 MB) and the tiny E24 (9 MB), plus the 21 MB beat tracker. The selected model is downloaded from Hugging Face the first time you transcribe with it, and the browser keeps it for later visits.
+**Try it at [danielemorotti.github.io/guitab](https://danielemorotti.github.io/guitab/).** It offers E25 (20 MB), E19 (84 MB) and the tiny E24 (9 MB), plus the 3.6 MB beat tracker. The selected model is downloaded from Hugging Face the first time you transcribe with it, and the browser keeps it for later visits.
 
 To run it locally (a page served from this computer reads the models from `docs/models/` instead of Hugging Face):
 
@@ -115,7 +116,7 @@ To run it locally (a page served from this computer reads the models from `docs/
 python3 -m http.server 8800 -d docs         # then open http://127.0.0.1:8800
 ```
 
-Compared with the local app there is **no fuller-chords option**: the tab language model would be quite slow in the browser, so it is only in the local web app. The beat tracker runs on WebAssembly, and the tabs are kept in the browser (IndexedDB). A 2:23 song takes about 22 s. Audio and video files are decoded by the browser itself (WAV, MP3, FLAC, OGG, M4A, and the audio track of MP4 / MOV / WebM videos in Chrome, Edge and Safari). `?backend=wasm` in the URL turns WebGPU off.
+Compared with the local app there is **no fuller-chords option**: the tab language model would be quite slow in the browser, so it is only in the local web app. The beat tracker runs on WebAssembly, and the tabs are kept in the browser (IndexedDB). A 2:23 song takes about 16 s. Audio and video files are decoded by the browser itself (WAV, MP3, FLAC, OGG, M4A, and the audio track of MP4 / MOV / WebM videos in Chrome, Edge and Safari). `?backend=wasm` in the URL turns WebGPU off.
 
 It is published with GitHub Pages (Settings → Pages → deploy from the `docs/` folder of `main`). The .onnx files stay out of git: `docs/models.json` points at the Hugging Face repository (`export_web.py --base`), where the files of `docs/models/` are uploaded next to the .safetensors weights.
 
@@ -130,7 +131,7 @@ It is published with GitHub Pages (Settings → Pages → deploy from the `docs/
 5. **Heads**: for every frame and string, the fret (21 classes: silent or frets 0–19) and the onset probability, plus a 48-semitone pitch head used only as an extra training target.
 6. **Note extraction** (`guitab/inference.py`): notes start at onset peaks, take the most likely fret, and end at silence, at a new attack or at a fret change (legato). The same pitch on two strings at once is kept once, an attack that splits a ringing note is merged back, and with a capo the notes below it move to a playable string.
 7. **Optional chord decoding** (`guitab/tablm.py`, `--music_lm`): a beam search over candidate chords, scored by the acoustic model and by a 3.3M-parameter transformer trained on about 12.7k symbolic guitar tabs.
-8. **Tab** (`guitab/tab.py`, `guitab/fingering.py`, `guitab/gp5.py`): beats and downbeats from Beat This!, quantisation to a grid that follows tempo drift, optional re-fingering, and Guitar Pro 5 output.
+8. **Tab** (`guitab/beats.py`, `guitab/tab.py`, `guitab/fingering.py`, `guitab/gp5.py`): the beats come from the Beat This! activation together with the model's own onset probabilities, tracked by dynamic programming, so they stay regular but follow the tempo when the player speeds up or slows down; the bar length and the first bar come from the downbeat activation. Then quantisation to a grid that follows those beats, optional re-fingering, and Guitar Pro 5 output.
 
 E25 and E24 are trained by distillation: the small student learns from the labels and, with equal weight, from the averaged predictions of the larger E18 and E19.
 
@@ -212,6 +213,7 @@ Distilled models are under-confident on note attacks. Pick their onset threshold
 .venv/bin/python scripts/evaluate.py --checkpoint runs/tabmodel_mid_close/best.pt --split validation --tune   # threshold search
 .venv/bin/python scripts/evaluate_gaps.py --checkpoints runs/tabmodel_mid_close/best.pt                    # GAPS test
 .venv/bin/python scripts/sweep.py --checkpoint runs/tabmodel_mid_close/best.pt --out runs/sweep.json       # P/R sweep + frame metrics
+.venv/bin/python scripts/evaluate_beats.py --splits test,gaps_test                                         # beat grid: rhythm, beats, downbeats
 ```
 
 - Choose checkpoints and settings on validation only (GuitarSet player 04, GAPS validation), and report the test sets once per model.
@@ -221,7 +223,7 @@ Distilled models are under-confident on note attacks. Pick their onset threshold
 ## 6. Repository layout
 
 ```
-guitab/            the library: audio, model, inference, tablm, tab, fingering, gp5, pipeline, cli, app (+ web/),
+guitab/            the library: audio, model, inference, tablm, beats, tab, fingering, gp5, pipeline, cli, app (+ web/),
                    device, data, augment, guitarset, gaps, synthtab, custom_data, evaluation, paths
 scripts/           command-line tools: data preparation, caches, training, evaluation
 experiments/       exact launchers of the training runs (see EXPERIMENTS.md)

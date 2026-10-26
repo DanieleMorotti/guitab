@@ -187,3 +187,35 @@ def build_labels(h):
     payload = {"notes": out, "standard_tuning": standard, "match_rate": rate, "content_sim": content_sim}
     return {"hash": h, "status": "ok", "notes": len(out), "match_rate": round(rate, 3), "content_sim": round(content_sim, 3),
             "standard_tuning": standard, "tuning": json.dumps(tuning)}, payload
+
+
+def score_beats(h, max_gap=2.0):
+    """(beats, downbeats) in seconds for GAPS piece h, from the score: every score chord matched to an aligned-MIDI chord
+    (as in build_labels) is an anchor (score position in quarters, time); quarter-note beats and measure starts are
+    interpolated between anchors at most max_gap quarters apart, elsewhere left out (rubato makes longer gaps unsafe)."""
+    import pretty_midi
+
+    snotes, m_offsets = score_notes(xml_path(h))
+    pm = pretty_midi.PrettyMIDI(str(midi_path(h)))
+    mnotes = sorted((n for i in pm.instruments for n in i.notes), key=lambda n: n.start)
+    sgroups = group_onsets(snotes, key=lambda n: n[0], gap=1e-6)
+    mgroups = group_onsets(mnotes, key=lambda n: n.start, gap=0.035)
+    pairs = align_groups([{n[1] for n in g} for g in sgroups], [{n.pitch for n in g} for g in mgroups])
+    anchors = sorted({(sgroups[i][0][0], min(n.start for n in mgroups[j])) for i, j in pairs})
+    q, t = np.array([a[0] for a in anchors]), np.array([a[1] for a in anchors])
+    keep = np.r_[True, np.diff(t) > 0] & np.r_[True, np.diff(q) > 0]  # strictly increasing
+    q, t = q[keep], t[keep]
+
+    def at(positions):
+        out = []
+        for b in positions:
+            k = np.searchsorted(q, b)
+            if k < len(q) and q[k] == b:
+                out.append(t[k])
+            elif 0 < k < len(q) and q[k] - q[k - 1] <= max_gap:
+                out.append(t[k - 1] + (b - q[k - 1]) / (q[k] - q[k - 1]) * (t[k] - t[k - 1]))
+        return np.array(out)
+
+    if not len(q):
+        return np.array([]), np.array([])
+    return at(np.arange(np.ceil(q[0]), np.floor(q[-1]) + 1)), at([m for m in m_offsets if q[0] <= m <= q[-1]])

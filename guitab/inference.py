@@ -198,18 +198,21 @@ def drop_duplicates(notes, window):
     return [n for n, k in zip(notes, keep) if k]
 
 
-def transcribe_file(checkpoint, audio_path, device, params=None, music_lm=None):
+def transcribe_file(checkpoint, audio_path, device, params=None, music_lm=None, with_onset=False):
     """music_lm: None = default note extraction; a dict of decoding settings (guitab.tablm.DEFAULT_DECODING, optionally
-    with "path" to the LM checkpoint) = joint decoding with the tab language model (fuller chords, opt-in)."""
+    with "path" to the LM checkpoint) = joint decoding with the tab language model (fuller chords, opt-in).
+    with_onset: return (notes, onset probabilities [T, 6]) for the beat tracker."""
     model = load_model(checkpoint, device)
     feat = compute_cqt(load_audio(audio_path))
     tab, onset = predict(model, feat, device)
     params = {**model.decoding, **(params or {})}
     if music_lm is None:
-        return extract_notes(tab, onset, params)
+        notes = extract_notes(tab, onset, params)
+        return (notes, onset) if with_onset else notes
     from .paths import TABLM_CHECKPOINT
     from .tablm import DEFAULT_DECODING, decode_with_lm, load_tablm
 
     cfg = {**DEFAULT_DECODING, **music_lm}
     lm = load_tablm(cfg.pop("path", TABLM_CHECKPOINT), device)
-    return decode_with_lm(tab, onset, lm, device, params=params, **cfg)
+    notes = decode_with_lm(tab, onset, lm, device, params=params, **cfg)
+    return (notes, onset) if with_onset else notes

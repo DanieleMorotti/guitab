@@ -30,9 +30,9 @@
   }
  ],
  "beat_model": {
-  "id": "final0",
-  "url": "https://huggingface.co/danmor/guitab/resolve/main/beat_this_final0_int8.onnx",
-  "mb": 21.0,
+  "id": "small0",
+  "url": "https://huggingface.co/danmor/guitab/resolve/main/beat_this_small0_int8.onnx",
+  "mb": 3.6,
   "chunk": 1500,
   "border": 6
  }

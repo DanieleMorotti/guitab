@@ -1,7 +1,8 @@
 """Turn note events in seconds into a quantized Guitar Pro tab, following the detected beats.
 
 Back end of the transcriber:
-  1. beat tracking (Beat This!) gives beat and downbeat times;
+  1. beat tracking gives beat and downbeat times (B1): the Beat This! activation (paths.BEAT_MODEL) plus the tab model's
+     onset probabilities, tracked by dynamic programming (guitab.beats), downbeats as one metre and phase per song;
   2. every time is mapped to a fractional beat index by interpolating between beats, so the
      tab follows tempo drift instead of a single fixed tempo; tick 0 is put on a downbeat;
   3. onsets/offsets are snapped to a 16th (or 32nd) grid;
@@ -21,7 +22,7 @@ import numpy as np
 
 from .fingering import refinger_tokens
 from .guitar import OPEN_PITCH
-from .paths import BEAT_ONNX, BEAT_THIS_CKPT, fetch
+from .paths import BEAT_MODEL, BEAT_ONNX, BEAT_THIS_CKPT, fetch
 
 TICKS_PER_BEAT = 960
 GRID = 120  # 32nd note: finest grid the token writer supports
@@ -51,8 +52,9 @@ class _PaddedChunks:
 
 
 def _beat_model(device):
-    """The browser's beat tracker (Beat This! final0 with int8 weights, ONNX; downloaded with the weights if missing), so
-    both versions find the same beats; offline, the PyTorch final0 checkpoint (data/models, else Beat This!'s cache)."""
+    """The browser's beat tracker (Beat This! BEAT_MODEL with int8 weights, ONNX; downloaded with the weights if
+    missing), so both versions find the same beats; offline, the PyTorch checkpoint (data/models, else Beat This!'s
+    cache)."""
     try:
         fetch(BEAT_ONNX)
     except RuntimeError as e:
@@ -70,7 +72,7 @@ def _beat_model(device):
     from beat_this.inference import load_model
 
     dev = torch.device(device)
-    model = load_model(str(BEAT_THIS_CKPT) if BEAT_THIS_CKPT.exists() else "final0", dev)
+    model = load_model(str(BEAT_THIS_CKPT) if BEAT_THIS_CKPT.exists() else BEAT_MODEL, dev)
 
     def run(x):
         with torch.inference_mode():
@@ -80,13 +82,16 @@ def _beat_model(device):
     return _PaddedChunks(run)
 
 
-def detect_beats(audio_path, device="cpu"):
-    """(beats, downbeats) in seconds from Beat This! (minimal post-processing, no DBN)."""
+def detect_beats(audio_path, device="cpu", onset=None):
+    """(beats, downbeats) in seconds: the Beat This! activation and the tab model's onset probabilities onset [T, 6]
+    (optional) tracked by dynamic programming (guitab.beats.track_beats), downbeats by guitab.beats.pick_downbeats."""
+    from .audio import FPS
+    from .beats import activation, pick_downbeats, track_beats
+
     import soundfile
     import soxr
     import torch
     from beat_this.inference import split_predict_aggregate
-    from beat_this.model.postprocessor import Postprocessor
     from beat_this.preprocessing import LogMelSpect
     from beat_this.preprocessing import load_audio as beat_this_audio
 
@@ -104,11 +109,12 @@ def detect_beats(audio_path, device="cpu"):
     with torch.inference_mode():
         spect = LogMelSpect(device="cpu")(torch.tensor(signal, dtype=torch.float32))
         pred = split_predict_aggregate(spect, BEAT_CHUNK, 6, "keep_first", _beat_model(device))
-    # logits rounded to 0.01 (float64, round half up) before picking peaks, as the browser version does: its
-    # WebAssembly arithmetic differs from the native one by ~1e-6, which could move a near-tied peak by a frame
-    rounded = [torch.from_numpy(np.floor(pred[k].double().numpy() * 100 + 0.5) / 100) for k in ("beat", "downbeat")]
-    beats, downbeats = Postprocessor(type="minimal")(*rounded)
-    return np.asarray(beats, dtype=float), np.asarray(downbeats, dtype=float)
+    # logits rounded to 0.01 (float64, round half up), as the browser version does: its WebAssembly arithmetic differs
+    # from the native one by ~1e-6, which could move a near-tied beat by a frame
+    beat, down = (np.floor(pred[k].double().numpy() * 100 + 0.5) / 100 for k in ("beat", "downbeat"))
+    n = len(onset) if onset is not None else int(len(beat) / 50 * FPS)
+    beats = track_beats(activation(beat, n), onset)
+    return beats, pick_downbeats(beats, activation(down, n))
 
 
 def beats_per_measure(beats, downbeats):

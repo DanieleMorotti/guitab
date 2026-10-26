@@ -17,12 +17,13 @@ def transcribe_to_tab(audio_path, out_dir, stem=None, checkpoint=DEFAULT_CHECKPO
     low. Returns {"gp5", "tokens", "notes", "tempo", "beats_per_measure"}; raises ValueError if no note was found."""
     audio_path = Path(audio_path).resolve()
     device = str(pick_device(device))
-    notes = apply_capo(transcribe_file(str(checkpoint), audio_path, device, params or {}, music_lm), capo)
+    notes, onset = transcribe_file(str(checkpoint), audio_path, device, params or {}, music_lm, with_onset=True)
+    notes = apply_capo(notes, capo)
     log(f"{len(notes)} notes")
     if tempo != "auto":
         beat_grid = BeatGrid([], tempo=int(tempo))
     else:
-        beats, downbeats = detect_beats(audio_path, device)
+        beats, downbeats = detect_beats(audio_path, device, onset)
         beat_grid = BeatGrid(beats, downbeats)
     log(f"tempo {beat_grid.tempo} bpm, {beat_grid.num_beats}/4")
     weights = None if fingering == "model" else FINGERING_PRESETS[fingering]

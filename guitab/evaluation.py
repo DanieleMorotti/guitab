@@ -173,3 +173,57 @@ def gaps_ref(label_path):
         pitch = OPEN_PITCH[s] + f if s else f
         out.append({"onset": on, "offset": off, "string": s, "fret": f if s else None, "pitch": pitch})
     return out
+
+
+def _beat_span(ref, est):
+    """est beats inside the stretches where the reference has beats (gaps over twice its median interval split them):
+    GAPS references leave out passages the score alignment cannot place."""
+    if len(ref) < 2:
+        return est
+    ibi = np.median(np.diff(ref))
+    cut = np.where(np.diff(ref) > 2 * ibi)[0]
+    keep = np.zeros(len(est), dtype=bool)
+    for a, b in zip(np.r_[ref[0], ref[cut + 1]], np.r_[ref[cut], ref[-1]]):
+        keep |= (est >= a - ibi / 2) & (est <= b + ibi / 2)
+    return est[keep]
+
+
+def beat_fmeasure(ref, est, tol=0.07):
+    """F-measure of beat (or downbeat) times, one-to-one within +-tol s, over the reference's span (_beat_span)."""
+    ref, est = np.asarray(ref, dtype=float), np.asarray(est, dtype=float)
+    est = _beat_span(ref, est)
+    if not len(ref) or not len(est):
+        return 0.0
+    used, hit = np.zeros(len(est), dtype=bool), 0
+    for r in ref:
+        d = np.abs(est - r)
+        d[used] = np.inf
+        k = int(np.argmin(d))
+        if d[k] <= tol:
+            used[k] = True
+            hit += 1
+    return 2 * hit / (len(ref) + len(est))
+
+
+def rhythm_accuracy(ref, est, onsets):
+    """Share of consecutive note-onset intervals that get the same 16th-grid length (in beats) with the estimated beats
+    as with the reference beats, under the best global factor 1, 2 or 1/2 (a piece written in eighths instead of
+    quarters is still right). Only onsets between two reference beats at most 1.5 median intervals apart count."""
+    ref, est, on = (np.asarray(a, dtype=float) for a in (ref, est, onsets))
+    if len(ref) < 2 or len(est) < 2:
+        return np.nan
+    k = np.searchsorted(ref, on)
+    ok = (k > 0) & (k < len(ref))
+    gap = np.full(len(on), np.inf)
+    gap[ok] = ref[k[ok]] - ref[k[ok] - 1]
+    on = on[gap <= 1.5 * np.median(np.diff(ref))]
+    on = on[(on >= max(ref[0], est[0])) & (on <= min(ref[-1], est[-1]))]
+    if len(on) < 3:
+        return np.nan
+
+    def grid(beats):
+        return np.diff(np.round(np.interp(on, beats, np.arange(len(beats))) * 4) / 4)
+
+    r, e = grid(ref), grid(est)
+    pos = r > 0
+    return max(float(np.mean(np.abs(e[pos] - f * r[pos]) < 1e-6)) for f in (1, 2, 0.5))

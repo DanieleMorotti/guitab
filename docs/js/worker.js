@@ -1,12 +1,12 @@
 // Web Worker running the whole transcription in the browser: audio (22.05 kHz mono) -> CQT -> tab model (ONNX Runtime
-// Web, WebGPU when available, else WebAssembly) -> notes -> beats (Beat This!) -> tab tokens -> .gp5 bytes.
+// Web, WebGPU when available, else WebAssembly) -> notes -> beats (Beat This! + the model's onsets) -> tab tokens -> .gp5.
 // Same steps as guitab/pipeline.py; models are downloaded on the first transcription that needs them and kept in the
 // browser cache (Cache Storage) for the next visits.
 
 import { cqtFeature, melSpectrogram } from "./dsp.js";
 import { applyCapo, extractNotes, predict } from "./notes.js";
 import { BeatGrid, FINGERING_PRESETS, notesToTokens } from "./tab.js";
-import { detectBeats } from "./beats.js";
+import { beatLogits, detectBeats } from "./beats.js";
 import { writeGp5 } from "./gp5.js";
 
 const ORT_VERSION = "1.22.0";
@@ -114,10 +114,11 @@ async function transcribe({ audio, base, opts }) {
     const beatModel = opts.beatModel;
     const beatSession = await getSession(modelUrl(beatModel.url, base), `beat tracker (${beatModel.mb} MB)`, false);
     const mel = melSpectrogram(audio, dsp);
-    const { beats, downbeats } = await detectBeats(mel.data, mel.frames, async (x) => {
+    const logits = await beatLogits(mel.data, mel.frames, async (x) => {
       const out = await beatSession.run({ x: new ort.Tensor("float32", x, [1, beatModel.chunk, 128]) });
       return { beat: await out.beat.getData(), downbeat: await out.downbeat.getData() };
     }, beatModel.chunk, beatModel.border);
+    const { beats, downbeats } = detectBeats(logits, probs.onset, probs.frames);
     grid = new BeatGrid(beats, downbeats);
     console.debug("beats", beats.length, "downbeats", downbeats.length, "tempo", grid.tempo);
   } else grid = new BeatGrid([], null, parseInt(opts.tempo, 10));

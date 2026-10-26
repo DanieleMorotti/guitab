@@ -1,6 +1,6 @@
 """Export what the browser app (docs/) needs: the tab models and the beat tracker as ONNX, plus the DSP constants.
 
-    python scripts/export_web.py      # E25, E19, E24 + Beat This! final0 (int8 weights) into docs/models/
+    python scripts/export_web.py      # E25, E19, E24 + Beat This! paths.BEAT_MODEL (int8 weights) into docs/models/
 
 Writes <out>/models/guitab_<id>.onnx (not versioned: the published page fetches them from --base, the Hugging Face
 model repo, where they sit next to the .pt weights), <out>/models.json (the models the page offers, with their download
@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from guitab.audio import BINS_PER_OCTAVE, FMIN_NOTE, HOP, N_BINS, SR  # noqa: E402
 from guitab.inference import load_model  # noqa: E402
-from guitab.paths import DATA, MODELS  # noqa: E402
+from guitab.paths import BEAT_MODEL, DATA, MODELS  # noqa: E402
 
 HALVING_TAPS = 2047
 TAB_WINDOW = 432  # frames per model window (inference.predict)
@@ -213,7 +213,7 @@ def main():
     parser.add_argument("--base", default="https://huggingface.co/danmor/guitab/resolve/main/",
                         help="URL prefix the published page downloads the .onnx files from (a page served from localhost "
                              "reads them from docs/models/)")
-    parser.add_argument("--beat", default="final0", help="Beat This! checkpoint name in data/models (final0 / small0)")
+    parser.add_argument("--beat", default=BEAT_MODEL, help="Beat This! checkpoint name in data/models (small0 / final0)")
     parser.add_argument("--beat_fp32", action="store_true", help="keep the beat tracker's weights in float32 (default: "
                         "int8 weights with float32 arithmetic, final0 79 -> 21 MB)")
     args = parser.parse_args()

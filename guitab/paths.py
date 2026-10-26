@@ -9,17 +9,21 @@ DATA = ROOT / "data"
 RUNS = ROOT / "runs"
 CACHE = DATA / "tabmodel_cache"           # CQT features + frame labels (scripts/build_cache.py)
 AUG_CACHE = DATA / "tabmodel_cache_aug"   # CQT of augmented / degraded audio (scripts/build_aug_cache.py)
+BEAT_TEACHER = DATA / "beat_teacher"      # Beat This! activations, the beat head's teacher (scripts/beat_teacher.py)
 GUITARSET = DATA / "guitarset"            # annotation/ (JAMS), audio_mic/
 GUITARSET_SHIFT = DATA / "guitarset_shift"
 GAPS = DATA / "gaps"
 EVAL_CHUNKS = DATA / "eval_chunks.json"   # frozen GuitarSet evaluation chunks (versioned)
-BEAT_THIS_CKPT = DATA / "models" / "beat_this-final0.ckpt"
+# Beat This! model behind the beat grid (B1): "small0" (2M parameters, 3.6 MB) or "final0" (20M, 21 MB; ~3 points better
+# rhythm on steady-tempo songs, the same on free-tempo ones; EXPERIMENTS.md, B1). Both versions use the same one.
+BEAT_MODEL = "small0"
+BEAT_THIS_CKPT = DATA / "models" / f"beat_this-{BEAT_MODEL}.ckpt"
 CERTS = DATA / "certs" / "macos_trusted.pem"
 WEIGHTS = ROOT / "weights"  # the published weights (Hugging Face), one flat folder
 WEIGHTS_URL = "https://huggingface.co/danmor/guitab/resolve/main/"
-# the browser version's beat tracker (Beat This! final0, int8 weights; scripts/export_web.py), published with the weights
-BEAT_ONNX = next((p for p in (WEIGHTS, ROOT / "docs" / "models") if (p / "beat_this_final0_int8.onnx").exists()),
-                 WEIGHTS) / "beat_this_final0_int8.onnx"
+# the browser version's beat tracker (BEAT_MODEL with int8 weights; scripts/export_web.py), published with the weights
+BEAT_ONNX_NAME = f"beat_this_{BEAT_MODEL}_int8.onnx"
+BEAT_ONNX = next((p for p in (WEIGHTS, ROOT / "docs" / "models") if (p / BEAT_ONNX_NAME).exists()), WEIGHTS) / BEAT_ONNX_NAME
 
 
 def checkpoint(run, published=None):
