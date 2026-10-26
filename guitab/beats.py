@@ -1,116 +1,14 @@
-"""Beats from the tab model itself (B1): a beat / downbeat head on the frozen tab model, and the beat decoding.
+"""Beats and downbeats for the tab grid (B1).
 
-The tab model is not changed: its trunk runs as usual on 5 s windows (432 frames, hop 288), and in the same pass gives
-features [T, 512] = the output of transformer layer 2 and the final normalised state (the tab / onset heads' input),
-overlap-added like the tab predictions (predict_features). With a BeatBranch (B2), the first half is replaced by a
-trainable copy of the tab model's last transformer layers, started from the state after layer 2. BeatHead, a dilated temporal convolutional network (kernel 3,
-dilations 1..512, ±11.9 s of context) over the whole track's features, predicts beat and downbeat logits; it is trained
-on Beat This! activations and real beat labels (scripts/train_beat_head.py).
-
-Decoding: dynamic-programming beat tracking (Ellis 2007, librosa.beat.beat_track) on the beat activation plus the summed
-onset probabilities, which gives regular beats that still follow tempo changes; downbeats: the bar length (2, 3 or 4
-beats) and phase whose beats have the highest mean downbeat activation.
+The Beat This! beat activation plus the tab model's summed onset probabilities is tracked by dynamic programming (Ellis
+2007, the algorithm of librosa.beat.beat_track, reimplemented so that the browser version, docs/js/beats.js, finds the
+same beats): the beats stay regular but follow the player when the tempo changes. Downbeats: the bar length (2, 3 or 4
+beats) and phase whose beats have the highest mean downbeat activation, one metre per song as the tab writes it.
 """
 
-import copy
-
 import numpy as np
-import torch
-import torch.nn as nn
 
 from .audio import FPS, HOP, SR
-from .model import DilatedConvs
-
-FEATURE_LAYERS = (1, -1)  # transformer layer 2 and the last one (normalised): 2 x d_model features per frame
-
-
-class BeatBranch(nn.Module):
-    """A trainable copy of the tab model's transformer layers after FEATURE_LAYERS[0] and of its final norm (B2): from
-    the frozen state after layer 2 it computes rhythm-oriented features, while the tab model itself stays unchanged."""
-
-    def __init__(self, model):
-        super().__init__()
-        self.layers = copy.deepcopy(model.encoder.layers[FEATURE_LAYERS[0] + 1:])
-        self.norm = copy.deepcopy(model.norm)
-
-    def forward(self, h):
-        for layer in self.layers:
-            h = layer(h)
-        return self.norm(h)
-
-
-def forward_features(model, x, branch=None, grad=False):
-    """The tab model's forward pass (TabModel with a transformer) that also returns the head features [B, T, 2d]:
-    [state after layer 2 (or the branch's output), final normalised state]. The tab model runs without gradients;
-    grad=True lets them flow through the branch."""
-    b, t, _ = x.shape
-    with torch.no_grad():
-        h = model.cnn(model.harmonic_stack(x))
-        h = model.proj(h.permute(0, 2, 1, 3).reshape(b, t, -1)) + model.pos[:, :t]
-        mid = None
-        for i, layer in enumerate(model.encoder.layers):
-            h = layer(h)
-            if i == FEATURE_LAYERS[0]:
-                mid = h
-        h = model.norm(h)
-    if branch is not None:
-        with torch.set_grad_enabled(grad):
-            mid = branch(mid)
-    return {"tab": model.tab_head(h).view(b, t, 6, model.n_classes), "onset": model.onset_head(h),
-            "features": torch.cat([mid, h], -1)}
-
-
-@torch.no_grad()
-def predict_features(model, feat, device, win=432, hop=288, batch=16, branch=None):
-    """As inference.predict (same windows and taper, same tab / onset probabilities) plus the head features [T, 2d]."""
-    t_total = len(feat)
-    tab = np.zeros((t_total, 6, model.n_classes), dtype=np.float32)
-    onset = np.zeros((t_total, 6), dtype=np.float32)
-    feats = None
-    weight = np.zeros((t_total, 1), dtype=np.float32)
-    starts = list(range(0, max(t_total - win, 0) + 1, hop))
-    if starts[-1] + win < t_total:
-        starts.append(t_total - win)
-    taper = np.hanning(win + 2)[1:-1].astype(np.float32)[:, None] + 1e-3
-    for b in range(0, len(starts), batch):
-        group = starts[b:b + batch]
-        x = torch.from_numpy(np.stack([np.asarray(feat[s:s + win], dtype=np.float32) for s in group])).to(device)
-        out = forward_features(model, x, branch)
-        tab_b = torch.softmax(out["tab"].float(), -1).cpu().numpy()
-        onset_b = torch.sigmoid(out["onset"].float()).cpu().numpy()
-        f_b = out["features"].float().cpu().numpy()
-        if feats is None:
-            feats = np.zeros((t_total, f_b.shape[-1]), dtype=np.float32)
-        n = x.shape[1]
-        w = taper[:n]
-        for i, s in enumerate(group):
-            tab[s:s + n] += tab_b[i] * w[:, :, None]
-            onset[s:s + n] += onset_b[i] * w
-            feats[s:s + n] += f_b[i] * w
-            weight[s:s + n] += w
-    return tab / weight[:, :, None], onset / weight, feats / weight
-
-
-class BeatHead(nn.Module):
-    """[B, T, d_in] frozen tab-model features -> [B, T, 2] beat and downbeat logits."""
-
-    def __init__(self, d_in=512, d=128, layers=10, dropout=0.1):
-        super().__init__()
-        self.inp = nn.Sequential(nn.LayerNorm(d_in), nn.Linear(d_in, d))
-        self.tcn = DilatedConvs(d, layers, dropout)
-        self.norm = nn.LayerNorm(d)
-        self.out = nn.Linear(d, 2)
-
-    def forward(self, f):
-        return self.out(self.norm(self.tcn(self.inp(f))))
-
-
-@torch.no_grad()
-def beat_activations(head, feats, device):
-    """(beat, downbeat) probabilities [T] for a whole track's features [T, d_in]."""
-    out = torch.sigmoid(head(torch.from_numpy(np.asarray(feats, dtype=np.float32))[None].to(device)))[0].cpu().numpy()
-    return out[:, 0], out[:, 1]
-
 
 BEAT_FPS = 50  # Beat This! frame rate
 TEMPO_WIN = 689  # 8 s tempo windows (as librosa.feature.tempo at 22.05 kHz, hop 256)

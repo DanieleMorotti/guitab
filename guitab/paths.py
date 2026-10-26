@@ -9,7 +9,6 @@ DATA = ROOT / "data"
 RUNS = ROOT / "runs"
 CACHE = DATA / "tabmodel_cache"           # CQT features + frame labels (scripts/build_cache.py)
 AUG_CACHE = DATA / "tabmodel_cache_aug"   # CQT of augmented / degraded audio (scripts/build_aug_cache.py)
-BEAT_TEACHER = DATA / "beat_teacher"      # Beat This! activations, the beat head's teacher (scripts/beat_teacher.py)
 GUITARSET = DATA / "guitarset"            # annotation/ (JAMS), audio_mic/
 GUITARSET_SHIFT = DATA / "guitarset_shift"
 GAPS = DATA / "gaps"
