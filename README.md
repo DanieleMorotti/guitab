@@ -10,6 +10,8 @@ You get a `.gp5` file with the notes on the right strings and frets, laid out on
 
 **What to expect.** On clean recordings about 85% of the notes come out right, with the correct string and fret. Dense 3–4 note chords, quiet inner voices and phone recordings in a reverberant room are much harder. Treat the result as *a first draft to correct by ear*, not as a finished tab.
 
+**What's new in 1.1** (2026-10-26): better rhythm in the tab, from beats that follow the player's tempo (+5 points on steady songs, +13 on free-tempo pieces), and a beat tracker 6 times smaller, so the browser version is about 40% faster. All versions are in the [changelog](CHANGELOG.md).
+
 ## Results
 
 | Test set | Metric (onset ±50 ms) | E15 (public data) | E19 (+ custom dataset) | E25 (default) | E24 (tiny) |
