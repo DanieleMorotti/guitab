@@ -61,7 +61,7 @@ The weights are on Hugging Face at [danmor/guitab](https://huggingface.co/danmor
 | `beat_this_small0_int8.onnx` | the [Beat This!](https://github.com/CPJKU/beat_this) beat tracker (small model) with int8 weights, shared with the browser version | 3.6 MB |
 | `beat_this_final0_int8.onnx` | the larger Beat This! model, used only if you select it (below) | 21 MB |
 
-**Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (E25 and the beat tracker for the first transcription, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
+**Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (each first download of a tab model is counted on the Hugging Face page, through a request for its small `config.json`; nothing else is sent) (E25 and the beat tracker for the first transcription, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
 
 ```bash
 uv pip install --python .venv/bin/python huggingface_hub

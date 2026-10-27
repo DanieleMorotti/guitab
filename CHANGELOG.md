@@ -4,6 +4,11 @@ What changed for people who use Guitab, one version at a time. The experiments b
 
 Published weights never change under the same file name: a new or retrained model gets a new file on [Hugging Face](https://huggingface.co/danmor/guitab), so results stay reproducible and the browser version never keeps a stale copy.
 
+## 1.1.1 — 2026-10-27
+
+- **Download counts on Hugging Face.** The model page now shows how many times a model was downloaded: the first time a machine or a browser downloads a tab model, Guitab requests the small `config.json` file, which is what the Hub counts. Nothing else is sent, and later runs with the model already downloaded are not counted. `hf download danmor/guitab` counts too.
+- **New file** on Hugging Face: `config.json` (the version, the models and their files).
+
 ## 1.1.0 — 2026-10-26
 
 - **Better rhythm in the tab.** The beats now come from the beat tracker's activation together with the model's own note onsets, tracked by dynamic programming, so they stay regular but follow the player when the tempo changes. Notes get the right note value more often: +5 points on steady-tempo songs and +13 on free-tempo classical pieces (GuitarSet and GAPS test sets), and the bar lines fall in the right place more often.
