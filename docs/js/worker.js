@@ -55,6 +55,11 @@ async function modelBytes(url, label) {
     got += value.length;
     progress("download", total ? got / total : 0, `Downloading ${label}: ${(got / 2 ** 20).toFixed(0)}${total ? ` / ${(total / 2 ** 20).toFixed(0)}` : ""} MB`);
   }
+  // a tab model downloaded from Hugging Face counts as one download on the model page: the Hub counts requests for
+  // config.json (guitab.paths.count_download); best effort, nothing but the request itself is sent
+  if (url.startsWith("https://huggingface.co/") && url.split("/").pop().startsWith("guitab_")) {
+    fetch(url.replace(/[^/]+$/, "config.json"), { method: "HEAD" }).catch(() => {});
+  }
   const bytes = new Uint8Array(got);
   let off = 0;
   for (const p of parts) { bytes.set(p, off); off += p.length; }

@@ -68,7 +68,21 @@ def fetch(path):
         raise RuntimeError(f"could not download {url} ({e}); check the connection, or download the weights by hand "
                            "(README, Install)") from e
     part.rename(path)
+    if path.name.startswith("guitab_") and path.suffix == ".safetensors":
+        count_download()
     return path
+
+
+def count_download():
+    """One request for config.json, the file the Hugging Face Hub counts downloads by (every GET / HEAD of it is one
+    download on the model page): sent once per tab model downloaded, carries nothing but the request itself, never
+    fails the caller."""
+    import urllib.request
+
+    try:
+        urllib.request.urlopen(urllib.request.Request(WEIGHTS_URL + "config.json", method="HEAD"), timeout=5).close()
+    except Exception:  # noqa: BLE001 - counting is best effort
+        pass
 
 
 def resolve(path):
