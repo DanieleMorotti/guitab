@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from .chords import suggest_chords
 from .device import pick_device
 from .fingering import FINGERING_PRESETS
 from .gp5 import write_gp5
@@ -11,10 +12,12 @@ from .tab import BeatGrid, detect_beats, notes_to_tokens
 
 
 def transcribe_to_tab(audio_path, out_dir, stem=None, checkpoint=DEFAULT_CHECKPOINT, device="auto", params=None,
-                      music_lm=None, capo=0, tempo="auto", fingering="model", grid=240, write_tokens=True, log=print):
+                      music_lm=None, capo=0, tempo="auto", fingering="model", grid=240, write_tokens=True, log=print,
+                      chords=True):
     """Write <out_dir>/<stem>.gp5 (and the tab as text tokens, <stem>.tokens.txt, if write_tokens). params: note-extraction settings (inference.DEFAULT_PARAMS keys);
     music_lm: None or tab-LM decoding settings (lam, beta); tempo: "auto" (beat tracking) or BPM; fingering: model / auto /
-    low. Returns {"gp5", "tokens", "notes", "tempo", "beats_per_measure"}; raises ValueError if no note was found."""
+    low; chords: chord names above the parts where the chord model is confident (guitab.chords; none without its
+    weights). Returns {"gp5", "tokens", "notes", "tempo", "beats_per_measure"}; raises ValueError if no note was found."""
     audio_path = Path(audio_path).resolve()
     device = str(pick_device(device))
     notes, onset = transcribe_file(str(checkpoint), audio_path, device, params or {}, music_lm, with_onset=True)
@@ -22,13 +25,17 @@ def transcribe_to_tab(audio_path, out_dir, stem=None, checkpoint=DEFAULT_CHECKPO
     log(f"{len(notes)} notes")
     if tempo != "auto":
         beat_grid = BeatGrid([], tempo=int(tempo))
+        downbeats = []
     else:
         beats, downbeats = detect_beats(audio_path, device, onset)
         beat_grid = BeatGrid(beats, downbeats)
     log(f"tempo {beat_grid.tempo} bpm, {beat_grid.num_beats}/4")
     weights = None if fingering == "model" else FINGERING_PRESETS[fingering]
     stem = stem or audio_path.stem
-    tokens = notes_to_tokens(notes, beat_grid, stem, grid, weights, capo=capo)
+    chord_list = suggest_chords(notes, beat_grid.beats, downbeats, capo) if chords else None
+    if chord_list:
+        log(f"{len(chord_list)} chord names")
+    tokens = notes_to_tokens(notes, beat_grid, stem, grid, weights, capo=capo, chords=chord_list)
     if tokens is None:
         raise ValueError("No notes were transcribed.")
     out_dir = Path(out_dir)

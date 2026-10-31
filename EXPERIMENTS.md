@@ -1151,3 +1151,44 @@ The Hugging Face files are `.safetensors` instead of `.pt`: a `.pt` file is a pi
 
 **Decision.** Not adopted: no significant rhythm gain over small0 + tracker, worse bar lines on steady songs, and ~8.6 MB more in E25's browser model. The training code (teacher activations, head, branch) was removed; the tracker, the beat metrics and the score-based GAPS beats stay. More real beat labels (only GuitarSet's 4 players have them) and a stronger downbeat signal would be the way to try again.
 
+
+### B3 — Bar lines that may shift phase mid-song (meter DP) — 2026-10-30: not adopted, no code kept
+
+**Idea** (from SheetSage2's meter decoder). Keep B1's metre and first downbeat, but let a Viterbi over the beats move the bar's phase by one beat where the downbeat activation clearly asks for it (cost per shift, tuned on GuitarSet and GAPS validation plus GAPS train; with an infinite cost it reproduces B1 exactly).
+
+**Result** (bar-line F-measure, test once): GuitarSet .580 → .584 (1 better / 1 worse, not significant), GAPS .295 → .343 (12 / 3, p = .02). Each shift becomes an irregular bar in the tab (about one per minute on classical pieces).
+
+**Decision.** Not adopted: it helps free-tempo pieces only and adds irregular bars; not worth the extra complexity.
+
+### C1 — Chord suggestions: a small learned model on the transcribed notes (`runs/chords`) — 2026-10-30
+
+**Goal.** Chord names above the tab (`.gp5` chord names, a Chords switch in the local app), suggested from what the tab model already hears: no second audio model.
+
+**Evaluation sets** (`scripts/build_chord_data.py`, `scripts/evaluate_chords.py`, `guitab.evaluation.chord_scores`): majmin accuracy (right root and major / minor family) over the reference chords' time. GuitarSet (validation / test players; played and instructed chords, comp and solo takes) and the 18 custom-dataset recordings whose tab has chord names and a good alignment (the tab's chords timed through the aligned notes; 10 songs for choosing checkpoints, 8 reported once; their tabs are never used for training). Notes and beats as the pipeline computes them (E25, B1 beats).
+
+**First attempts (not adopted, no code kept).**
+- *Rules* (per-beat pitch-class templates, Chordonomicon chord-to-chord statistics, a key bonus, a Viterbi with a change cost, chords hidden on melody-only passages): GuitarSet comp .79, but 61-64% on the custom songs.
+- *BTC* (Park et al., ISMIR 2019, 3M parameters, 12 MB, full-band pop training; run from its MIT weights converted to safetensors): ~.67 on the 18 custom songs, GuitarSet comp .77-.80, solos poor.
+
+**Model** (`guitab/chords.py`, 135k parameters, 542 KB). Input per eighth note of the beat grid: pitch-class features of the transcribed notes (sounding share, onsets, bass, open strings, low register, top note) and a few global ones. The same small MLP + bidirectional GRU looks at the features rotated to each of the 12 roots (harmony learned once for all keys) and scores 10 qualities (maj, min, 7, maj7, m7, m7b5, dim, sus2, sus4, 5); a no-chord score comes from all roots. Decoding: Viterbi with a cost per change and Chordonomicon's chord-to-chord statistics (`guitab/chord_bigram.json`); consecutive chords of the same root and major / minor family are merged and a span is shown when the family's mean probability is >= 0.5.
+
+**Training data** (`guitab/chord_data.py`, made on the fly; `scripts/train_chords.py`, CPU, ~70 min for 20k steps).
+- *Synthetic guitar parts*: a stretch of a real progression (Chordonomicon, 679k songs, CC BY-NC 4.0), played with real voicings (a library of open / barre / movable shapes, inversions, capo, ringing open strings), anticipated changes and a texture (strum, arpeggio, Travis picking, melody over a bass, melody alone), with the beat tracker's typical errors.
+- *Simulated transcription errors* (`degrade`), calibrated on unseen recordings by comparing E25's notes with exact notes: on fingerstyle covers E25 finds 81% of single notes but 50% of notes in chords of 4+, and 40% of its notes are extra (a ringing note struck again 13%, unrelated pitches 12%, a semitone or two off 6%, notes in silence 6%); on EGDB 90% / 84% and 20% extra.
+- *Tabs with chord names*: 40 custom-dataset tabs (not the evaluation songs), as exact notes.
+- *Self-training*: 147 custom-dataset recordings and EGDB's 75 test recordings (3 amplifiers) labelled by the run-1 model reading their exact notes (confident chords only); the student learns them from E25's notes of the same audio.
+- *GuitarSet* training players.
+
+**Runs** (validation every 1k steps; selection: mean majmin of GuitarSet comp, GuitarSet solo and the custom validation songs).
+
+| | data | custom (18) | custom test (8) | GuitarSet comp, played / instructed (test) | solo (test) |
+|---|---|---|---|---|---|
+| Run 1 (135k) | synthetic .6, tabs .15, GuitarSet .25; first error model | .635 | .559 | .829 / .849 | .429 |
+| **Run 2 (135k)** | synthetic .45, tabs .2, self-training .25, GuitarSet .1; calibrated errors | **.685** | **.610** | .835 / .872 | .414 |
+| Run 3 (524k, MPS) | as run 2, width 128 | .677 | .587 | .864 / .895 | .364 |
+
+- Run 1 peaked on the custom songs at 4k steps and then drifted towards GuitarSet's style (custom .69 → .63-.66).
+- The gap between exact notes and E25's notes shrank from 11 points (run 1: .744 / .635) to 4.6 (run 2: .731 / .685); every model stays at .73-.74 even on exact notes, so a bigger model only helps GuitarSet. Of the remaining errors, 5-7 points are timing (accuracy within ±1 s: .79 on exact notes) and the rest mostly I vs IV / V inside a reference chord, where the tabs' chord names themselves are sparse.
+- Decoding is close to optimal at a change cost of 2 (the model changes chords less often than the references, 15 vs 24 per minute). The confidence is well calibrated: with the family merge and threshold 0.5, chords are shown on 93% of the custom validation songs (77% right where shown), 97% of GuitarSet comp (89%) and 46% of solos (53%).
+
+**Decision.** Run 2 (`runs/chords/best.safetensors`): the best on real fingerstyle songs (.685 vs BTC ~.67) at 1/22 of BTC's size; run 3 is better only on GuitarSet at 4x the size. The pipeline writes chord names when the weights are present (`guitab.chords.suggest_chords`; tabs unchanged without them), and the local app has a Chords switch with an "approximate" note. Not yet in the browser version. Open: open-voicing ambiguities (e.g. F#m7(11) over a C# bass read as A), chords placed an eighth early on single treble notes.

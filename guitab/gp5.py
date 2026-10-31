@@ -2,7 +2,8 @@
 
 Tokens: the song name, header tokens (downtune:, tempo:, start), then per beat its content - "note:s<string>:f<fret>"
 (optionally followed by "nfx:tie") or "rest" - and one "wait:<ticks>" giving the beat's duration (960 ticks per
-quarter); "new_measure" closes a measure and "end" the song. A measure's time signature is its length in quarters
+quarter), optionally preceded by "chord:<name>" (a chord name shown above the beat); "new_measure" closes a measure and
+"end" the song. A measure's time signature is its length in quarters
 (a shorter last measure in eighths, sixteenths or 32nds). One standard-tuned 6-string track, capo optional.
 """
 
@@ -17,11 +18,13 @@ DURATIONS = {3840: (1, False), 2880: (2, True), 1920: (2, False), 1440: (4, True
 
 
 def parse_measures(tokens):
-    """[[(ticks, [(string, fret, tied)] or None for a rest)]] per measure, and the tempo."""
+    """[[(ticks, [(string, fret, tied)] or None for a rest, chord name or None)]] per measure, and the tempo."""
     tempo = next((int(t.split(":")[1]) for t in tokens if t.startswith("tempo:")), 120)
-    measures, beats, content = [], [], []
+    measures, beats, content, chord = [], [], [], None
     for t in tokens[tokens.index("start") + 1:]:
-        if t.startswith("note:"):
+        if t.startswith("chord:"):
+            chord = t.split(":", 1)[1]
+        elif t.startswith("note:"):
             _, s, f = t.split(":")
             content.append([int(s[1:]), int(f[1:]), False])
         elif t == "nfx:tie":
@@ -29,8 +32,8 @@ def parse_measures(tokens):
         elif t == "rest":
             content = None
         elif t.startswith("wait:"):
-            beats.append((int(t.split(":")[1]), [tuple(n) for n in content] if content is not None else None))
-            content = []
+            beats.append((int(t.split(":")[1]), [tuple(n) for n in content] if content is not None else None, chord))
+            content, chord = [], None
         elif t in ("new_measure", "end") and beats:
             measures.append(beats)
             beats = []
@@ -56,16 +59,19 @@ def write_gp5(tokens, path, capo=0):
     song.measureHeaders, track.measures = [], []
     start = QUARTER
     for number, beats in enumerate(measures, 1):
-        numerator, denominator = time_signature(sum(ticks for ticks, _ in beats))
+        numerator, denominator = time_signature(sum(ticks for ticks, _, _ in beats))
         header = gp.MeasureHeader(number=number, start=start,
                                   timeSignature=gp.TimeSignature(numerator, gp.Duration(value=denominator)))
         song.addMeasureHeader(header)
         measure = gp.Measure(track, header)
         voice = measure.voices[0]
-        for ticks, notes in beats:
+        for ticks, notes, chord in beats:
             value, dotted = DURATIONS[ticks]
             beat = gp.Beat(voice, duration=gp.Duration(value=value, isDotted=dotted),
                            status=gp.BeatStatus.rest if notes is None else gp.BeatStatus.normal)
+            if chord:  # the name only, no diagram
+                beat.effect.chord = gp.Chord(length=6, name=chord, sharp=False, add=False, firstFret=0, show=False,
+                                             strings=[-1] * 6)
             for string, fret, tied in notes or []:
                 beat.notes.append(gp.Note(beat, value=fret, string=string,
                                           type=gp.NoteType.tie if tied else gp.NoteType.normal))

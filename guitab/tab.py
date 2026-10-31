@@ -173,9 +173,10 @@ def assign_strings(group, capo=0):
     return [n for n in group if n["string"]]
 
 
-def notes_to_tokens(notes, grid_obj, name="song", grid=240, fingering=None, max_notes=6, capo=0):
+def notes_to_tokens(notes, grid_obj, name="song", grid=240, fingering=None, max_notes=6, capo=0, chords=None):
     """notes: dicts with onset, offset (s), pitch, optional string, optional score (for pruning).
-    capo: tokens get frets relative to it (refingering then works in the capo'd tuning)."""
+    capo: tokens get frets relative to it (refingering then works in the capo'd tuning).
+    chords: [(start s, end s, name)] (guitab.chords.suggest_chords), written as "chord:<name>" before their first beat."""
     groups = {}
     for n in notes:
         on = grid_obj.ticks(n["onset"], grid)
@@ -209,7 +210,35 @@ def notes_to_tokens(notes, grid_obj, name="song", grid=240, fingering=None, max_
     tokens = build_tokens(name, tab_notes, grid_obj.tempo, grid_obj.num_beats)
     if fingering is not None:
         tokens = refinger_tokens(tokens, fingering)
+    if chords:
+        tokens = add_chord_tokens(tokens, [(grid_obj.ticks(s, grid) - shift, grid_obj.ticks(e, grid) - shift, c)
+                                           for s, e, c in chords])
     return tokens
+
+
+def add_chord_tokens(tokens, chords, repeat=4 * TICKS_PER_BEAT):
+    """Insert "chord:<name>" before the first beat starting in each chord's [start, end) ticks (none if no beat does); the
+    same name as the last one is written again only after `repeat` ticks (a chord resuming after a short gap)."""
+    starts, cursor, beat_start = [], 0, True
+    for i, t in enumerate(tokens):
+        if beat_start and (t.startswith("note:") or t == "rest"):
+            starts.append((cursor, i))
+            beat_start = False
+        elif t.startswith("wait:"):
+            cursor += int(t.split(":")[1])
+            beat_start = True
+    at, last = {}, (None, None)
+    for start, end, name in chords:
+        tick, k = next(((tick, i) for tick, i in starts if start <= tick < end), (None, None))
+        if k is None or k in at or (name == last[0] and tick - last[1] < repeat):
+            continue
+        at[k], last = name, (name, tick)
+    out = []
+    for i, t in enumerate(tokens):
+        if i in at:
+            out.append(f"chord:{at[i]}")
+        out.append(t)
+    return out
 
 
 def build_tokens(name, notes, tempo, num_beats):

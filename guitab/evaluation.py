@@ -227,3 +227,30 @@ def rhythm_accuracy(ref, est, onsets):
     r, e = grid(ref), grid(est)
     pos = r > 0
     return max(float(np.mean(np.abs(e[pos] - f * r[pos]) < 1e-6)) for f in (1, 2, 0.5))
+
+
+def chord_scores(refs, est, step=0.02):
+    """Chord accuracy over the reference chords' time (20 ms steps): {"time": scored seconds, "shown": shown seconds,
+    "root": right root, "majmin": right root and major / minor family, "exact": right chord}, each in seconds.
+    refs, est: [(start s, end s, chord class)] (guitab.chords); est may leave gaps (no chord shown). Reference chords
+    outside the vocabulary or without a major / minor family count only for "time" and "shown"."""
+    from .chords import IGNORE, NO_CHORD, NQ, triad
+
+    out = dict.fromkeys(("time", "shown", "root", "majmin", "exact", "majmin_time"), 0.0)
+    starts = np.array([e[0] for e in est])
+    for t0, t1, k in refs:
+        if k in (IGNORE, NO_CHORD):
+            continue
+        t = np.arange(t0, t1, step)
+        j = np.searchsorted(starts, t, "right") - 1
+        shown = (j >= 0) & (t < np.array([est[i][1] if i >= 0 else -1 for i in j]))
+        guess = np.array([est[i][2] if s else NO_CHORD for i, s in zip(j, shown)], dtype=np.int64)
+        root = shown & (guess // NQ == k // NQ)
+        out["time"] += len(t) * step
+        out["shown"] += shown.sum() * step
+        out["root"] += root.sum() * step
+        out["exact"] += (shown & (guess == k)).sum() * step
+        if triad(k) in ("maj", "min"):
+            out["majmin_time"] += len(t) * step
+            out["majmin"] += (root & np.array([triad(g) == triad(k) for g in guess])).sum() * step
+    return out

@@ -35,7 +35,7 @@ guitab-app = "guitab.app:main"
 packages = ["guitab"]
 
 [tool.setuptools.package-data]
-guitab = ["web/*.html", "web/*.png"]
+guitab = ["web/*.html", "web/*.png", "chord_bigram.json"]
 
 [tool.ruff]
 line-length = 125
