@@ -1,6 +1,6 @@
 // Web Worker running the whole transcription in the browser: audio (22.05 kHz mono) -> CQT -> tab model (ONNX Runtime
 // Web, WebGPU when available, else WebAssembly) -> notes -> beats (Beat This! + the model's onsets) -> tab tokens -> .gp5.
-// Same steps as guitab/pipeline.py; models are downloaded on the first transcription that needs them and kept in the
+// Then the chord names (chord model + decoding, as guitab.chords.suggest_chords). Same steps as guitab/pipeline.py; models are downloaded on the first transcription that needs them and kept in the
 // browser cache (Cache Storage) for the next visits.
 
 import { cqtFeature, melSpectrogram } from "./dsp.js";
@@ -8,6 +8,7 @@ import { applyCapo, extractNotes, predict } from "./notes.js";
 import { BeatGrid, FINGERING_PRESETS, notesToTokens } from "./tab.js";
 import { beatLogits, detectBeats } from "./beats.js";
 import { writeGp5 } from "./gp5.js";
+import { suggestChords } from "./chords.js";
 
 const ORT_VERSION = "1.22.0";
 const ORT_DIR = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
@@ -113,7 +114,7 @@ async function transcribe({ audio, base, opts }) {
   const params = { ...(opts.model.decoding || {}), ...(opts.onset ? { onset: opts.onset } : {}) };
   const notes = applyCapo(extractNotes(probs, params), opts.capo);
 
-  let grid;
+  let grid, downs = [];
   if (opts.tempo === "auto") {
     progress("beats", 0, "Finding the beats…");
     const beatModel = opts.beatModel;
@@ -125,11 +126,23 @@ async function transcribe({ audio, base, opts }) {
     }, beatModel.chunk, beatModel.border);
     const { beats, downbeats } = detectBeats(logits, probs.onset, probs.frames);
     grid = new BeatGrid(beats, downbeats);
+    downs = downbeats;
     console.debug("beats", beats.length, "downbeats", downbeats.length, "tempo", grid.tempo);
   } else grid = new BeatGrid([], null, parseInt(opts.tempo, 10));
 
+  let chords = null;
+  if (opts.chordModel) { // the chord model is tiny: WebAssembly, whose output matches Python's
+    progress("chords", 0, "Finding the chords…");
+    const chordSession = await getSession(modelUrl(opts.chordModel.url, base), `chord model (${opts.chordModel.mb} MB)`, false);
+    chords = await suggestChords(notes, grid.beats, downs, opts.capo, async (f) => {
+      const out = await chordSession.run({ pcf: new ort.Tensor("float32", f.pcf, [1, f.n, 6, 12]),
+        glob: new ort.Tensor("float32", f.glob, [1, f.n, 6]) });
+      return await out.logits.getData();
+    }, dsp.chord_bigram);
+  }
+
   const weights = opts.fingering === "model" ? null : FINGERING_PRESETS[opts.fingering];
-  const tokens = notesToTokens(notes, grid, opts.name, opts.grid, weights, 6, opts.capo);
+  const tokens = notesToTokens(notes, grid, opts.name, opts.grid, weights, 6, opts.capo, chords);
   if (tokens === null) throw new Error("No notes were transcribed.");
   const gp5 = writeGp5(tokens, dsp.gp5, opts.capo);
   return { gp5, notes: notes.length, tempo: grid.tempo, beats_per_measure: grid.numBeats, backend,

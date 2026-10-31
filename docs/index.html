@@ -156,6 +156,18 @@
   .chip { font-size: 11px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 20px; padding: 1px 8px; }
   .vtools { display: flex; align-items: center; gap: 6px; }
   .vtools .seg { width: 190px; }
+  .chord-toggle { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 8px; border-radius: 8px; cursor: pointer;
+                  border: 1px solid var(--line-strong); background: var(--raised); color: var(--muted); font-size: 13px; font-weight: 500; }
+  .chord-toggle:hover { color: var(--ink); border-color: var(--accent); }
+  .chord-toggle .sw { position: relative; width: 26px; height: 15px; border-radius: 10px; background: var(--line-strong); transition: background .15s; flex: none; }
+  .chord-toggle .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--panel);
+                             transition: transform .15s; }
+  .chord-toggle.on { color: var(--ink); border-color: var(--accent); }
+  .chord-toggle.on .sw { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .chord-toggle.on .sw::after { transform: translateX(11px); }
+  .chord-toggle .approx { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent);
+                          background: var(--accent-soft); border-radius: 20px; padding: 1px 6px; }
+  .chip.warn { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
   .close-btn { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 8px; cursor: pointer;
                border: 1px solid var(--line-strong); background: var(--raised); font-size: 13px; font-weight: 500; }
   .close-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -293,6 +305,7 @@
       <div class="vhead">
         <div class="vtitle"><h2 id="title">No tab loaded</h2><div class="chips" id="chips"></div></div>
         <div class="vtools">
+          <button class="chord-toggle on" id="chords" hidden title="Chord names suggested by a small model from the transcribed notes: on real fingerstyle songs about 3 in 4 shown chords are right (9 in 10 on strummed accompaniment); where it is unsure, no chord is shown."><span class="sw"></span>Chords<span class="approx">approx.</span></button>
           <div class="seg" id="view"><button data-v="Tab" class="on">Tab</button><button data-v="ScoreTab">Score + tab</button></div>
           <button class="icon-btn" id="zoomOut" title="Smaller"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/></svg></button>
           <button class="icon-btn" id="zoomIn" title="Larger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M11 8v6M20 20l-4-4"/></svg></button>
@@ -356,6 +369,28 @@ const api = new alphaTab.AlphaTabApi($("at"), {
   player: { playerMode: alphaTab.PlayerMode.EnabledSynthesizer, soundFont: CDN + "soundfont/sonivox.sf2",
             scrollElement: $("scroll"), enableCursor: true, enableUserInteraction: true },
 });
+// chord names (from the .gp5) are shown or hidden with the Chords switch; the chord diagram list on top is never shown
+let showChords = true, tabHasChords = false;
+try { showChords = localStorage.getItem("guitab-chords") !== "0"; } catch (e) {}
+api.settings.notation.elements.set(alphaTab.NotationElement.ChordDiagrams, false);
+api.settings.notation.elements.set(alphaTab.NotationElement.EffectChordNames, showChords);
+api.updateSettings();
+function chordsUi() {
+  $("chords").hidden = !tabHasChords;
+  $("chords").classList.toggle("on", showChords);
+  if ($("chordNote")) $("chordNote").hidden = !(tabHasChords && showChords);
+}
+api.scoreLoaded.on((score) => {
+  tabHasChords = score.tracks.some((t) => t.staves.some((st) => st.bars.some((b) => b.voices.some((v) => v.beats.some((be) => be.hasChord)))));
+  chordsUi();
+});
+$("chords").onclick = () => {
+  showChords = !showChords;
+  try { localStorage.setItem("guitab-chords", showChords ? "1" : "0"); } catch (e) {}
+  chordsUi();
+  api.settings.notation.elements.set(alphaTab.NotationElement.EffectChordNames, showChords);
+  api.updateSettings(); api.render();
+};
 let busyFor = null;  // "transcribe" | "render" | null
 function busy(on, title, text) {
   $("busy").hidden = !on;
@@ -369,6 +404,7 @@ $("closeTab").onclick = () => {
   $("paper").hidden = true; $("emptyState").hidden = false; $("closeTab").hidden = true; $("download").hidden = true;
   $("play").disabled = $("stop").disabled = $("seek").disabled = true;
   $("seek").value = 0; $("cur").textContent = $("end").textContent = "0:00";
+  tabHasChords = false;
   setHeader("No tab loaded", []); activeId = null; markActive();
 };
 api.playerReady.on(() => { if (!$("paper").hidden) $("play").disabled = $("stop").disabled = $("seek").disabled = false; });
@@ -414,7 +450,9 @@ document.addEventListener("keydown", (e) => {
 });
 function setHeader(title, chips) {
   $("title").textContent = title;
-  $("chips").innerHTML = chips.filter(Boolean).map((c) => `<span class="chip">${c}</span>`).join("");
+  $("chips").innerHTML = chips.filter(Boolean).map((c) => `<span class="chip">${c}</span>`).join("") +
+    `<span class="chip warn" id="chordNote" hidden>chords are suggestions: about 3 in 4 right</span>`;
+  chordsUi();
 }
 $("openGp").onclick = () => $("gpFile").click();
 $("gpFile").onchange = async (e) => {
@@ -496,10 +534,10 @@ $("onset").oninput = () => { $("onsetVal").textContent = $("onset").value; };
 $("onset").oninput();
 segment($("fingering")); segment($("grid"));
 
-let beatModel = null;
+let beatModel = null, chordModel = null;
 async function loadModels() {
   const manifest = await (await fetch("models.json")).json();
-  models = manifest.tab_models; beatModel = manifest.beat_model;
+  models = manifest.tab_models; beatModel = manifest.beat_model; chordModel = manifest.chord_model || null;
   $("model").innerHTML = models.map((m) => `<option value="${m.id}">${m.label.split(" · ")[0]}</option>`).join("");
   $("model").onchange = () => selectModel($("model").value);
   if (models.length) selectModel(models[0].id);
@@ -592,7 +630,7 @@ $("go").onclick = async () => {
   if (!audioBlob || !model) return;
   const m = models.find((x) => x.id === model);
   const name = ($("name").value || audioName.replace(/\.[^.]+$/, "")).replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "recording";
-  const opts = { model: m, beatModel, capo, tempo: $("tempo").value || "auto", onset: parseFloat($("onset").value),
+  const opts = { model: m, beatModel, chordModel, capo, tempo: $("tempo").value || "auto", onset: parseFloat($("onset").value),
     fingering: segValue($("fingering")), grid: parseInt(segValue($("grid")), 10), name,
     detail: `${m.label.split(" · ")[0]}${capo ? ", capo " + capo : ""}`,
     backend: new URLSearchParams(location.search).get("backend") }; // ?backend=wasm: no WebGPU

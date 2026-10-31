@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "guitab"
-version = "1.1.1"
+version = "1.2.0"
 description = "Guitar audio to Guitar Pro tab transcription, focused on fingerstyle"
 readme = "README.md"
 license = "MIT"

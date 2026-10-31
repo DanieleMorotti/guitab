@@ -10,7 +10,7 @@ You get a `.gp5` file with the notes on the right strings and frets, laid out on
 
 **What to expect.** On clean recordings about 85% of the notes come out right, with the correct string and fret. Dense 3–4 note chords, quiet inner voices and phone recordings in a reverberant room are much harder. Treat the result as *a first draft to correct by ear*, not as a finished tab.
 
-**What's new in 1.1** (2026-10-26): better rhythm in the tab, from beats that follow the player's tempo (+5 points on steady songs, +13 on free-tempo pieces), and a beat tracker 6 times smaller, so the browser version is about 40% faster. All versions are in the [changelog](CHANGELOG.md).
+**What's new in 1.2** (2026-10-31): chord names above the tab, from a small chord model (0.5 MB) that reads the transcribed notes: about 3 in 4 shown chords are right on real fingerstyle songs and 9 in 10 on strummed accompaniment, and chords the model is unsure of are left out. A Chords switch shows or hides them, in the local app and in the browser. All versions are in the [changelog](CHANGELOG.md).
 
 ## Results
 
@@ -60,8 +60,9 @@ The weights are on Hugging Face at [danmor/guitab](https://huggingface.co/danmor
 | `tablm.safetensors` | the tab language model behind `--music_lm` | 13 MB |
 | `beat_this_small0_int8.onnx` | the [Beat This!](https://github.com/CPJKU/beat_this) beat tracker (small model) with int8 weights, shared with the browser version | 3.6 MB |
 | `beat_this_final0_int8.onnx` | the larger Beat This! model, used only if you select it (below) | 21 MB |
+| `chord_model.safetensors` | the chord model behind the chord names (`EXPERIMENTS.md`, C1) | 0.5 MB |
 
-**Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (each first download of a tab model is counted on the Hugging Face page, through a request for its small `config.json`; nothing else is sent) (E25 and the beat tracker for the first transcription, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
+**Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (each first download of a tab model is counted on the Hugging Face page, through a request for its small `config.json`; nothing else is sent) (E25, the beat tracker and the chord model for the first transcription, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
 
 ```bash
 uv pip install --python .venv/bin/python huggingface_hub
@@ -88,6 +89,7 @@ The result is `out/my_song/my_song.gp5`, named after the audio file, plus `my_so
 | `--fingering low` | Re-finger towards first position with a Viterbi optimiser. The default, `model`, keeps the model's strings; `auto` re-fingers only clearly awkward shapes. |
 | `--tempo 90` | A fixed tempo instead of following the detected beats. |
 | `--grid 120` | Quantisation grid in ticks (960 = quarter note): 240 = 16ths (default), 120 = 32nds. |
+| `--no_chords` | No chord names above the tab. By default a small chord model names the chords where it is confident (about 3 in 4 right on real fingerstyle songs); without its weights or a connection for the first download, the tab simply has none. |
 | `--checkpoint PATH` | Another model. |
 | `--name X` | The output file name. |
 | `--params JSON` | Note-extraction settings (`DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`. |
@@ -109,7 +111,7 @@ Every result is kept in `out/app/` and listed under *Tabs*. The server only list
 
 `docs/` is a static page that does the whole transcription in the browser, so *the audio never leaves the device*. The models run with [ONNX Runtime Web](https://onnxruntime.ai) (WebGPU when the browser has it, else WebAssembly), and the rest of the pipeline (constant-Q spectrogram, note extraction, beat grid, fingering, .gp5 writer) is ported to JavaScript in `docs/js/`. It gives the same .gp5 as the Python pipeline, **byte for byte**: both use the same models and beat tracker, checked on four recordings (fingerstyle, classical, electric) at 22.05 kHz. Audio at other sample rates is resampled by the browser instead of librosa, so its results are close but not identical.
 
-**Try it at [danielemorotti.github.io/guitab](https://danielemorotti.github.io/guitab/).** It offers E25 (20 MB), E19 (84 MB) and the tiny E24 (9 MB), plus the 3.6 MB beat tracker. The selected model is downloaded from Hugging Face the first time you transcribe with it, and the browser keeps it for later visits.
+**Try it at [danielemorotti.github.io/guitab](https://danielemorotti.github.io/guitab/).** It offers E25 (20 MB), E19 (84 MB) and the tiny E24 (9 MB), plus the 3.6 MB beat tracker and the 0.5 MB chord model. The selected model is downloaded from Hugging Face the first time you transcribe with it, and the browser keeps it for later visits.
 
 To run it locally (a page served from this computer reads the models from `docs/models/` instead of Hugging Face):
 
@@ -134,6 +136,8 @@ It is published with GitHub Pages (Settings → Pages → deploy from the `docs/
 6. **Note extraction** (`guitab/inference.py`): notes start at onset peaks, take the most likely fret, and end at silence, at a new attack or at a fret change (legato). The same pitch on two strings at once is kept once, an attack that splits a ringing note is merged back, and with a capo the notes below it move to a playable string.
 7. **Optional chord decoding** (`guitab/tablm.py`, `--music_lm`): a beam search over candidate chords, scored by the acoustic model and by a 3.3M-parameter transformer trained on about 12.7k symbolic guitar tabs.
 8. **Tab** (`guitab/beats.py`, `guitab/tab.py`, `guitab/fingering.py`, `guitab/gp5.py`): the beats come from the Beat This! activation together with the model's own onset probabilities, tracked by dynamic programming, so they stay regular but follow the tempo when the player speeds up or slows down; the bar length and the first bar come from the downbeat activation. Then quantisation to a grid that follows those beats, optional re-fingering, and Guitar Pro 5 output.
+
+9. **Chord names** (`guitab/chords.py`): per eighth note of the beat grid, the transcribed notes become pitch-class features (sounding notes, attacks, bass, open strings, low register, top note). A 135k-parameter model scores the chords with the same small network and bidirectional GRU for each of the 12 possible roots, so it learns harmony once for all keys. A Viterbi decoding with chord-to-chord statistics from Chordonomicon picks the sequence, and a chord is shown only where the model is confident.
 
 E25 and E24 are trained by distillation: the small student learns from the labels and, with equal weight, from the averaged predictions of the larger E18 and E19.
 
@@ -207,6 +211,16 @@ Distilled models are under-confident on note attacks. Pick their onset threshold
 - Re-running a launcher resumes from `last.pt`, and `STOP_AT=18:30 experiments/...` stops at the first evaluation after 18:30.
 - The outputs go to `runs/<name>/`: `best.pt` (best validation score), `last.pt` (for resuming) and `log.jsonl`.
 
+The chord model (about 70 min on a laptop CPU) needs [Chordonomicon](https://huggingface.co/datasets/ailsntua/Chordonomicon) in `data/chordonomicon/` and, for its real training and evaluation songs, the custom dataset and EGDB. The first run is trained without self-labelled recordings; its weights then label them for the second (`EXPERIMENTS.md`, C1):
+
+```bash
+.venv/bin/python scripts/build_chord_data.py                                     # data/chords/: progressions, voicings, tabs, GuitarSet, evaluation songs
+.venv/bin/python scripts/train_chords.py --out runs/chords_run1 --pseudo_share 0 --synth_share 0.6 --tab_share 0.15
+.venv/bin/python scripts/build_chord_data.py --pseudo runs/chords_run1/best.safetensors   # self-labelled recordings
+.venv/bin/python scripts/train_chords.py --out runs/chords                       # the published model
+.venv/bin/python scripts/evaluate_chords.py                                      # held-out GuitarSet and custom-dataset songs
+```
+
 ## 5. Evaluation
 
 ```bash
@@ -225,8 +239,8 @@ Distilled models are under-confident on note attacks. Pick their onset threshold
 ## 6. Repository layout
 
 ```
-guitab/            the library: audio, model, inference, tablm, beats, tab, fingering, gp5, pipeline, cli, app (+ web/),
-                   device, data, augment, guitarset, gaps, synthtab, custom_data, evaluation, paths
+guitab/            the library: audio, model, inference, tablm, beats, chords, tab, fingering, gp5, pipeline, cli, app (+ web/),
+                   device, data, augment, chord_data, guitarset, gaps, synthtab, custom_data, evaluation, paths
 scripts/           command-line tools: data preparation, caches, training, evaluation
 experiments/       exact launchers of the training runs (see EXPERIMENTS.md)
 assets/            the logo and the architecture diagram

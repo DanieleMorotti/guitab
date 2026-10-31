@@ -93,7 +93,9 @@ function assignStrings(group, capo) {
   return group.filter((n) => n.string);
 }
 
-export function notesToTokens(notes, grid, name = "song", gridTicks = 240, fingering = null, maxNotes = 6, capo = 0) {
+// chords: [[start s, end s, name]] (chords.js suggestChords), written as "chord:<name>" before their first beat
+export function notesToTokens(notes, grid, name = "song", gridTicks = 240, fingering = null, maxNotes = 6, capo = 0,
+  chords = null) {
   const groups = new Map();
   for (const n of notes) {
     const on = grid.ticks(n.onset, gridTicks);
@@ -123,7 +125,35 @@ export function notesToTokens(notes, grid, name = "song", gridTicks = 240, finge
   const tabNotes = events.map((n) => [n.on - shift, n.off - shift, n.string, n.pitch - OPEN_PITCH[n.string] - capo]);
   let tokens = buildTokens(name, tabNotes, grid.tempo, grid.numBeats);
   if (fingering !== null) tokens = refingerTokens(tokens, fingering);
+  if (chords && chords.length) {
+    tokens = addChordTokens(tokens, chords.map(([s, e, c]) => [grid.ticks(s, gridTicks) - shift,
+      grid.ticks(e, gridTicks) - shift, c]));
+  }
   return tokens;
+}
+
+// guitab.tab.add_chord_tokens: "chord:<name>" before the first beat starting in each chord's [start, end) ticks; the
+// same name as the last one again only after `repeat` ticks
+function addChordTokens(tokens, chords, repeat = 4 * TICKS_PER_BEAT) {
+  const starts = [];
+  let cursor = 0, beatStart = true;
+  tokens.forEach((t, i) => {
+    if (beatStart && (t.startsWith("note:") || t === "rest")) { starts.push([cursor, i]); beatStart = false; }
+    else if (t.startsWith("wait:")) { cursor += parseInt(t.split(":")[1], 10); beatStart = true; }
+  });
+  const at = new Map();
+  let last = [null, null];
+  for (const [start, end, name] of chords) {
+    const hit = starts.find(([tick]) => start <= tick && tick < end);
+    if (!hit) continue;
+    const [tick, k] = hit;
+    if (at.has(k) || (name === last[0] && tick - last[1] < repeat)) continue;
+    at.set(k, name);
+    last = [name, tick];
+  }
+  const out = [];
+  tokens.forEach((t, i) => { if (at.has(i)) out.push(`chord:${at.get(i)}`); out.push(t); });
+  return out;
 }
 
 function buildTokens(name, notes, tempo, numBeats) {

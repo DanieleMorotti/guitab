@@ -4,6 +4,12 @@ What changed for people who use Guitab, one version at a time. The experiments b
 
 Published weights never change under the same file name: a new or retrained model gets a new file on [Hugging Face](https://huggingface.co/danmor/guitab), so results stay reproducible and the browser version never keeps a stale copy.
 
+## 1.2.0 — 2026-10-31
+
+- **Chord names above the tab.** A small chord model (135k parameters, 0.5 MB) reads the transcribed notes on the beat grid and names the chords: on real fingerstyle songs about 3 in 4 shown chords are right, on strummed accompaniment about 9 in 10. Where it is unsure, typically on a melody alone, it shows nothing. They are in the .gp5 as chord names (no diagrams), the same in the `guitab` command, the local app and the browser version (byte for byte).
+- **Chords switch** in the local app and the browser version to show or hide them, with a note that they are approximate. `guitab --no_chords` leaves them out.
+- **New files** on Hugging Face: `chord_model.safetensors` and `chord_model.onnx`, downloaded automatically on first use. The tab models are unchanged, and so are the notes of every tab.
+
 ## 1.1.1 — 2026-10-27
 
 - **Download counts on Hugging Face.** The model page now shows how many times a model was downloaded: the first time a machine or a browser downloads a tab model, Guitab requests the small `config.json` file, which is what the Hub counts. Nothing else is sent, and later runs with the model already downloaded are not counted. `hf download danmor/guitab` counts too.

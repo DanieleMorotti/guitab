@@ -44,6 +44,7 @@ def main():
     parser.add_argument("--grid", type=int, default=240, help="Quantization grid in ticks (960 = quarter; 240 = 16th).")
     parser.add_argument("--device", default="auto", choices=DEVICES, help="auto = cuda, else mps, else cpu")
     parser.add_argument("--name", default=None, help="Output file stem (default: audio file stem).")
+    parser.add_argument("--no_chords", action="store_true", help="no chord names above the tab (guitab.chords).")
     args = parser.parse_args()
 
     params = json.loads(args.params) if args.params else {}
@@ -54,7 +55,7 @@ def main():
     music_lm = {"lam": args.music_lm_weight, "beta": args.music_lm_bonus} if args.music_lm else None
     try:
         transcribe_to_tab(args.audio, args.out_dir, args.name, args.checkpoint, args.device, params, music_lm, args.capo,
-                          args.tempo, args.fingering, args.grid)
+                          args.tempo, args.fingering, args.grid, chords=not args.no_chords)
     except ValueError as e:
         raise SystemExit(str(e)) from None
 

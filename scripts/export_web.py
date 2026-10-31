@@ -1,6 +1,6 @@
 """Export what the browser app (docs/) needs: the tab models and the beat tracker as ONNX, plus the DSP constants.
 
-    python scripts/export_web.py      # E25, E19, E24 + Beat This! paths.BEAT_MODEL (int8 weights) into docs/models/
+    python scripts/export_web.py      # E25, E19, E24 + Beat This! paths.BEAT_MODEL (int8 weights) + the chord model
 
 Writes <out>/models/guitab_<id>.onnx (not versioned: the published page fetches them from --base, the Hugging Face
 model repo, where they sit next to the .pt weights), <out>/models.json (the models the page offers, with their download
@@ -8,8 +8,10 @@ URL, size and own decoding settings) and <out>/assets/dsp.json (constants, versi
   - the CQT: librosa's sparse FFT filter basis of one octave (every octave uses the same filters at half the sample
     rate), the filter lengths, and an FIR filter matching the soxr_hq halving librosa uses between octaves;
   - the Beat This! log-mel spectrogram: its mel filterbank;
-  - the constant parts of the .gp5 files guitab.gp5 writes (pyguitarpro's defaults).
-Each ONNX model is checked against PyTorch with onnxruntime.
+  - the constant parts of the .gp5 files guitab.gp5 writes (pyguitarpro's defaults);
+  - the chord model's Chordonomicon chord-to-chord counts (guitab/chord_bigram.json).
+The chord model (guitab.chords, if trained or downloaded) becomes <out>/models/chord_model.onnx: logits for any number
+of segments (one call per song, as in Python). Each ONNX model is checked against PyTorch with onnxruntime.
 """
 
 import argparse
@@ -206,6 +208,36 @@ def gp5_template():
             "tempo_at": tempo_at - head2[0], "track": base[track[0]: track[1]].hex(), "capo_at": capo_at - track[0]}
 
 
+def export_chords(out, base):
+    """The chord model as ONNX (inputs pcf [1, S, 6, 12] and glob [1, S, 6], any S; output logits), checked against
+    PyTorch on several lengths; its models.json entry, or None without trained weights."""
+    import onnxruntime as ort
+
+    from guitab.chords import N_GLOBAL, N_PC_FEATURES, chord_weights, load_chord_model
+
+    weights = chord_weights()
+    if weights is None:
+        return None
+    model = load_chord_model(weights)
+    path = out / "models" / "chord_model.onnx"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    example = (torch.rand(1, 64, N_PC_FEATURES, 12), torch.rand(1, 64, N_GLOBAL))
+    torch.onnx.export(model, example, str(path), input_names=["pcf", "glob"], output_names=["logits"], opset_version=17,
+                      dynamic_axes={"pcf": {1: "segments"}, "glob": {1: "segments"}, "logits": {1: "segments"}},
+                      dynamo=False)
+    sess = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    worst = 0.0
+    for n in (1, 7, 300, 1500):
+        pcf, glob = torch.rand(1, n, N_PC_FEATURES, 12), torch.rand(1, n, N_GLOBAL)
+        with torch.no_grad():
+            ref = model(pcf, glob).numpy()
+        got = sess.run(["logits"], {"pcf": pcf.numpy(), "glob": glob.numpy()})[0]
+        worst = max(worst, float(np.abs(ref - got).max()))
+    size = path.stat().st_size / 2**20
+    print(f"chord model: {path} {size:.2f} MB, max |onnx - torch| {worst:.2e}", flush=True)
+    return {"url": base + path.name, "mb": round(size, 2)}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="docs")
@@ -223,6 +255,7 @@ def main():
     (out / "assets").mkdir(parents=True, exist_ok=True)
     dsp = dsp_constants()
     dsp["gp5"] = gp5_template()
+    dsp["chord_bigram"] = json.loads((Path(__file__).resolve().parents[1] / "guitab" / "chord_bigram.json").read_text())
     (out / "assets" / "dsp.json").write_text(json.dumps(dsp, separators=(",", ":")))
     print("assets/dsp.json written", flush=True)
 
@@ -254,6 +287,7 @@ def main():
     print(f"Beat This! {args.beat}: {path} {size:.1f} MB, max |onnx - torch| {err:.2e}", flush=True)
     manifest["beat_model"] = {"id": args.beat, "url": args.base + path.name, "mb": round(size, 1),
                               "chunk": BEAT_CHUNK, "border": 6}
+    manifest["chord_model"] = export_chords(out, args.base)
     (out / "models.json").write_text(json.dumps(manifest, indent=1))
     print(f"{out / 'models.json'} written", flush=True)
 

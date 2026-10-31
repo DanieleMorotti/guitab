@@ -7,21 +7,23 @@ const QUARTER = 960;
 const DURATIONS = { 3840: [1, false], 2880: [2, true], 1920: [2, false], 1440: [4, true], 960: [4, false],
   720: [8, true], 480: [8, false], 360: [16, true], 240: [16, false], 120: [32, false] };
 
-// [[[ticks, [[string, fret, tied], ...] or null for a rest], ...] per measure], tempo
+// [[[ticks, [[string, fret, tied], ...] or null for a rest, chord name or null], ...] per measure], tempo
 export function parseMeasures(tokens) {
   const tempoToken = tokens.find((t) => t.startsWith("tempo:"));
   const tempo = tempoToken ? parseInt(tempoToken.split(":")[1], 10) : 120;
   const measures = [];
-  let beats = [], content = [];
+  let beats = [], content = [], chord = null;
   for (const t of tokens.slice(tokens.indexOf("start") + 1)) {
-    if (t.startsWith("note:")) {
+    if (t.startsWith("chord:")) chord = t.slice(6);
+    else if (t.startsWith("note:")) {
       const [, s, f] = t.split(":");
       content.push([parseInt(s.slice(1), 10), parseInt(f.slice(1), 10), false]);
     } else if (t === "nfx:tie") content[content.length - 1][2] = true;
     else if (t === "rest") content = null;
     else if (t.startsWith("wait:")) {
-      beats.push([parseInt(t.split(":")[1], 10), content !== null ? content.map((n) => n.slice()) : null]);
+      beats.push([parseInt(t.split(":")[1], 10), content !== null ? content.map((n) => n.slice()) : null, chord]);
       content = [];
+      chord = null;
     } else if ((t === "new_measure" || t === "end") && beats.length) {
       measures.push(beats);
       beats = [];
@@ -51,6 +53,27 @@ class Writer {
     chars.forEach((c) => this.byte(c));
   }
   patchInt(offset, v) { for (let i = 0; i < 4; i++) this.bytes[offset + i] = (v >> (8 * i)) & 0xff; }
+  // a chord name without diagram, as pyguitarpro writes gp.Chord(length=6, name=..., sharp=False, add=False,
+  // firstFret=0, show=False, strings=[-1] * 6) (GP4 chord format)
+  chord(name) {
+    const chars = [...name].map((c) => (c.charCodeAt(0) < 256 ? c.charCodeAt(0) : 63));
+    this.byte(1); // GP4 chord format
+    this.byte(0); // sharp: no
+    for (let i = 0; i < 6; i++) this.byte(0); // placeholder (3), root, type, extension
+    this.int(0); this.int(0); // bass, tonality
+    this.byte(0); // add: no
+    this.byte(chars.length);
+    for (let i = 0; i < 22; i++) this.byte(i < chars.length ? chars[i] : 0); // name, 22 bytes
+    for (let i = 0; i < 3; i++) this.byte(0); // fifth, ninth, eleventh
+    this.int(0); // first fret
+    for (let i = 0; i < 7; i++) this.int(-1); // strings: not played
+    this.byte(0); // barres: none
+    for (let i = 0; i < 15; i++) this.byte(0); // barre frets, starts, ends
+    for (let i = 0; i < 7; i++) this.byte(1); // omissions
+    this.byte(0); // placeholder
+    for (let i = 0; i < 7; i++) this.byte(0xfe); // fingerings: unknown (-2)
+    this.byte(0); // show diagram: no
+  }
 }
 
 export function writeGp5(tokens, template, capo = 0) {
@@ -92,11 +115,12 @@ export function writeGp5(tokens, template, capo = 0) {
 
   for (const beats of measures) {
     w.int(beats.length);
-    for (const [ticks, notes] of beats) {
+    for (const [ticks, notes, chord] of beats) {
       const [value, dotted] = DURATIONS[ticks];
-      w.byte((dotted ? 0x01 : 0) | (notes === null ? 0x40 : 0));
+      w.byte((dotted ? 0x01 : 0) | (chord ? 0x02 : 0) | (notes === null ? 0x40 : 0));
       if (notes === null) w.byte(2); // rest
       w.byte(Math.log2(value) - 2); // duration: whole -2 ... 32nd 3
+      if (chord) w.chord(chord);
       const sorted = (notes || []).slice().sort((a, b) => a[0] - b[0]);
       w.byte(sorted.reduce((f, [s]) => f | (1 << (7 - s)), 0));
       for (const [, fret, tied] of sorted) {

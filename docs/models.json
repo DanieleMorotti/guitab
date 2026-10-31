@@ -35,5 +35,9 @@
   "mb": 3.6,
   "chunk": 1500,
   "border": 6
+ },
+ "chord_model": {
+  "url": "https://huggingface.co/danmor/guitab/resolve/main/chord_model.onnx",
+  "mb": 0.53
  }
 }

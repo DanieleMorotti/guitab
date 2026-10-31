@@ -11,6 +11,7 @@ shown when the model is confident enough (CONFIDENCE). Training: scripts/train_c
 
 import json
 import re
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -35,7 +36,7 @@ LOW_PITCH = 55  # below G3: bass register
 CHANGE = 2.0  # decoding: cost of a chord change (log-probability units)
 PROGRESSION = 0.25  # weight of the Chordonomicon move statistics
 CONFIDENCE = 0.5  # a chord is shown when its family's mean probability over its span is at least this (chord_spans)
-WEIGHTS_NAME = "guitab_chords.safetensors"
+WEIGHTS_NAME = "chord_model.safetensors"  # published (not guitab_*: only tab-model downloads are counted)
 
 
 def chord_class(root, quality):
@@ -129,10 +130,11 @@ def features(notes, bounds, beats=(), downbeats=(), capo=0):
     """Per segment: pitch-class features [S, N_PC_FEATURES, 12] and global features [S, N_GLOBAL] (float32).
     pc channels: sounding share, onsets, bass (lowest note sounding >= 30% of the segment), open-string sounding share,
     low-register sounding share, top note. Global: notes sounding, onsets, starts on a beat, starts on a downbeat, has
-    notes, segment length. notes: dicts with onset, offset, pitch and optionally fret (absolute; open = fret == capo)."""
+    notes, segment length. notes: dicts with onset, offset, pitch and optionally fret (absolute; open = fret == capo).
+    Computed in float64 in the notes' order, as the browser version (docs/js/chords.js) does."""
     n = len(bounds) - 1
-    pcf = np.zeros((n, N_PC_FEATURES, 12), dtype=np.float32)
-    glob = np.zeros((n, N_GLOBAL), dtype=np.float32)
+    pcf = np.zeros((n, N_PC_FEATURES, 12))
+    glob = np.zeros((n, N_GLOBAL))
     low, high = np.full(n, 999), np.full(n, -1)
     length = np.diff(bounds)
     for note in notes:
@@ -172,7 +174,7 @@ def features(notes, bounds, beats=(), downbeats=(), capo=0):
     glob[:, 1] = np.minimum(glob[:, 1], 6) / 6
     glob[:, 4] = has
     glob[:, 5] = np.minimum(length / 0.5, 2)
-    return pcf, glob
+    return pcf.astype(np.float32), glob.astype(np.float32)
 
 
 def labels_at(bounds, chords, outside=NO_CHORD):
@@ -226,11 +228,12 @@ def _progression_scores():
     data = json.loads((Path(__file__).parent / "chord_bigram.json").read_text())
     used = [data["qualities"].index(q) for q in QUALITIES]
     count = np.asarray(data["count"], dtype=np.float64)[np.ix_(used, range(12), used)] + 1
-    p = count / count.sum((1, 2), keepdims=True)
+    total = np.cumsum(count.reshape(NQ, -1), 1)[:, -1]  # sums in index order, as in the browser
+    p = count / total[:, None, None]
     root, q = np.arange(N_CHORDS) // NQ, np.arange(N_CHORDS) % NQ
     out = np.zeros((N_CHORDS + 1, N_CHORDS + 1))
     out[:N_CHORDS, :N_CHORDS] = np.log(p[q[:, None], (root[None, :] - root[:, None]) % 12, q[None, :]] * N_CHORDS)
-    return out
+    return _round(out, 1e-9)  # the browser's log can differ in the last bit
 
 
 def decode(log_probs, change=CHANGE, progression=PROGRESSION):
@@ -253,6 +256,18 @@ def decode(log_probs, change=CHANGE, progression=PROGRESSION):
     return path
 
 
+def _round(x, step):
+    return np.floor(np.asarray(x, dtype=np.float64) / step + 0.5) * step
+
+
+def probabilities(logits):
+    """Softmax in float64 of logits rounded to 0.001, rounded to 1e-4: the browser's ONNX Runtime output differs from
+    PyTorch's by ~1e-6, so both versions decode the same probabilities."""
+    x = _round(logits, 1e-3)
+    e = np.exp(x - x.max(-1, keepdims=True))
+    return _round(e / np.cumsum(e, -1)[..., -1:], 1e-4)  # sum in index order, as in the browser
+
+
 @torch.no_grad()
 def chord_probs(model, notes, beats, downbeats=(), capo=0):
     """(segment bounds, probabilities [S, C+1]) for a song."""
@@ -260,7 +275,7 @@ def chord_probs(model, notes, beats, downbeats=(), capo=0):
     pcf, glob = features(notes, bounds, beats, downbeats, capo)
     device = next(model.parameters()).device
     logits = model(torch.from_numpy(pcf)[None].to(device), torch.from_numpy(glob)[None].to(device))[0]
-    return bounds, torch.softmax(logits.float(), -1).cpu().numpy()
+    return bounds, probabilities(logits.float().cpu().numpy())
 
 
 def _families():
@@ -273,28 +288,39 @@ def chord_spans(bounds, probs, change=CHANGE, progression=PROGRESSION, confidenc
     """[(start s, end s, class)] of the shown chords. The decoded path is cut where the chord changes; with merge, only
     where the family changes (root, major / minor), and a span is named by its family's most probable chord. A span is
     shown when its mean probability (of the whole family with merge) is >= confidence."""
-    path = decode(np.log(np.maximum(probs, 1e-9)), change, progression)
+    path = decode(_round(np.log(np.maximum(probs, 1e-9)), 1e-9), change, progression)
     family = _families()
     key = family[path] if merge else path
-    members = np.equal.outer(family, family) if merge else np.eye(len(family), dtype=bool)
     out, start = [], 0
     for i in range(1, len(path) + 1):
         if i == len(path) or key[i] != key[start]:
             k = int(path[start])
             if k != NO_CHORD:
-                same = members[k]
-                if probs[start:i][:, same].sum(1).mean() >= confidence:
-                    k = int(np.flatnonzero(same)[np.argmax(probs[start:i][:, same].sum(0))])
-                    out.append((float(bounds[start]), float(bounds[i]), k))
+                same = np.flatnonzero(family == family[k]) if merge else [k]
+                # sums in index order, as the browser version adds them
+                total, per = 0.0, np.zeros(len(same))
+                for row in probs[start:i]:
+                    for j, c in enumerate(same):
+                        total += row[c]
+                        per[j] += row[c]
+                if total / (i - start) >= confidence:
+                    out.append((float(bounds[start]), float(bounds[i]), int(same[int(np.argmax(per))])))
             start = i
     return out
 
 
-def chord_weights():
-    """The chord model's weights: runs/chords/best.safetensors when trained here, else weights/; None if absent."""
-    from .paths import RUNS, WEIGHTS
+def chord_weights(download=False):
+    """The chord model's weights: runs/chords/best.safetensors when trained here, else weights/ (downloaded from
+    Hugging Face on first use with download); None if absent."""
+    from .paths import RUNS, WEIGHTS, fetch
 
-    return next((p for p in (RUNS / "chords" / "best.safetensors", WEIGHTS / WEIGHTS_NAME) if p.exists()), None)
+    path = next((p for p in (RUNS / "chords" / "best.safetensors", WEIGHTS / WEIGHTS_NAME) if p.exists()), None)
+    if path is None and download:
+        try:
+            path = fetch(WEIGHTS / WEIGHTS_NAME)
+        except RuntimeError as e:  # offline: the tab without chord names
+            print(f"no chord names: {e}", file=sys.stderr, flush=True)
+    return path
 
 
 def suggest_chords(notes, beats, downbeats=(), capo=0, model=None):
@@ -303,7 +329,7 @@ def suggest_chords(notes, beats, downbeats=(), capo=0, model=None):
     if not notes or len(beats) < 2:
         return []
     if model is None:
-        path = chord_weights()
+        path = chord_weights(download=True)
         if path is None:
             return []
         model = load_chord_model(path)
