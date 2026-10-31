@@ -61,9 +61,10 @@ def options(query):
     if q.get("onset"):
         params["onset"] = min(max(float(q["onset"]), 0.1), 0.95)
     music_lm = {"lam": 0.3, "beta": 1.0} if q.get("music_lm") == "1" else None
+    chords = q.get("chords") == "1"
     name = re.sub(r"[^A-Za-z0-9_-]+", "_", q.get("name", "") or "recording").strip("_")[:60] or "recording"
     return {"model": model, "capo": capo, "fingering": fingering, "tempo": tempo, "grid": grid, "params": params,
-            "music_lm": music_lm, "name": name}
+            "music_lm": music_lm, "chords": chords, "name": name}
 
 
 def history():
@@ -151,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 res = transcribe_to_tab(wav, run, opt["name"], MODELS[opt["model"]][0], self.device, opt["params"],
                                         opt["music_lm"], opt["capo"], opt["tempo"], opt["fingering"], opt["grid"],
-                                        write_tokens=False, log=lambda m: print("   " + m, flush=True))
+                                        write_tokens=False, log=lambda m: print("   " + m, flush=True), chords=opt["chords"])
         except ValueError as e:
             shutil.rmtree(run)
             return self.send(422, {"error": str(e)})
@@ -159,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
             shutil.rmtree(run)
             return self.send(500, {"error": f"{type(e).__name__}: {e}"})
         result = {"id": run.name, "name": opt["name"], "model": opt["model"], "capo": opt["capo"],
-                  "music_lm": bool(opt["music_lm"]), "notes": res["notes"], "tempo": res["tempo"],
+                  "music_lm": bool(opt["music_lm"]), "chords": opt["chords"], "notes": res["notes"], "tempo": res["tempo"],
                   "beats_per_measure": res["beats_per_measure"], "seconds": round(time.time() - t0, 1),
                   "gp5": f"/files/{run.name}/{res['gp5'].name}",
                   "created": f"{datetime.now():%Y-%m-%d %H:%M}"}

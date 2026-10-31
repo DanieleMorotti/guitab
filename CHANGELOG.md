@@ -6,9 +6,9 @@ Published weights never change under the same file name: a new or retrained mode
 
 ## 1.2.0 — 2026-10-31
 
-- **Chord names above the tab.** A small chord model (135k parameters, 0.5 MB) reads the transcribed notes on the beat grid and names the chords: on real fingerstyle songs about 3 in 4 shown chords are right, on strummed accompaniment about 9 in 10. Where it is unsure, typically on a melody alone, it shows nothing. They are in the .gp5 as chord names (no diagrams), the same in the `guitab` command, the local app and the browser version (byte for byte).
-- **Chords switch** in the local app and the browser version to show or hide them, with a note that they are approximate. `guitab --no_chords` leaves them out.
-- **New files** on Hugging Face: `chord_model.safetensors` and `chord_model.onnx`, downloaded automatically on first use. The tab models are unchanged, and so are the notes of every tab.
+- **Chord names above the tab, on request.** A small chord model (135k parameters, 0.5 MB) reads the transcribed notes on the beat grid and names the chords: on real fingerstyle songs about 3 in 4 shown chords are right, on strummed accompaniment about 9 in 10. Where it is unsure, typically on a melody alone, it shows nothing. They are in the .gp5 as chord names (no diagrams), the same in the `guitab` command (`--chords`), the local app and the browser version (the Chord names option; byte for byte). Off by default: tabs are unchanged unless you ask for chords.
+- **Chords switch** over the tab, in the local app and the browser version, to show or hide them, with a note that they are approximate. If the chord model cannot be downloaded, the tab is made without chord names.
+- **New files** on Hugging Face: `chord_model.safetensors` and `chord_model.onnx`, downloaded automatically the first time chord names are asked for. The tab models are unchanged, and so are the notes of every tab.
 
 ## 1.1.1 — 2026-10-27
 

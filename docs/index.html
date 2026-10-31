@@ -279,6 +279,7 @@
         <label><span class="label">Tempo (BPM)</span><input id="tempo" type="number" min="30" max="300" placeholder="auto"></label>
       </div>
       <div class="hint">Capo 0 = no capo · empty tempo follows the detected beats</div>
+      <label class="switch"><span class="txt">Chord names<small>above the tab, where the chord model is confident · approximate</small></span><input id="chordsOpt" type="checkbox"><span class="knob"></span></label>
       <div class="field">
         <span class="label">Note sensitivity · <span id="onsetVal"></span></span>
         <input id="onset" type="range" min="0.3" max="0.8" step="0.05" value="0.6">
@@ -563,7 +564,7 @@ async function store(mode, fn) {
   return new Promise((resolve, reject) => { tx.oncomplete = () => resolve(req.result); tx.onerror = () => reject(tx.error); });
 }
 let runs = [];
-function chipsOf(r) { return [r.model, r.capo ? "capo " + r.capo : "", r.tempo + " BPM", r.notes + " notes"]; }
+function chipsOf(r) { return [r.model, r.capo ? "capo " + r.capo : "", r.chords ? "chord names" : "", r.tempo + " BPM", r.notes + " notes"]; }
 function markActive() { [...$("lib").children].forEach((li) => li.classList.toggle("on", li.dataset.id === activeId)); }
 let downloadUrl = null;
 function showTab(r) {
@@ -630,7 +631,7 @@ $("go").onclick = async () => {
   if (!audioBlob || !model) return;
   const m = models.find((x) => x.id === model);
   const name = ($("name").value || audioName.replace(/\.[^.]+$/, "")).replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "recording";
-  const opts = { model: m, beatModel, chordModel, capo, tempo: $("tempo").value || "auto", onset: parseFloat($("onset").value),
+  const opts = { model: m, beatModel, chordModel: $("chordsOpt").checked ? chordModel : null, capo, tempo: $("tempo").value || "auto", onset: parseFloat($("onset").value),
     fingering: segValue($("fingering")), grid: parseInt(segValue($("grid")), 10), name,
     detail: `${m.label.split(" · ")[0]}${capo ? ", capo " + capo : ""}`,
     backend: new URLSearchParams(location.search).get("backend") }; // ?backend=wasm: no WebGPU
@@ -643,7 +644,7 @@ $("go").onclick = async () => {
     $("busyBar").hidden = true;
     const now = new Date();
     const r = { id: `${stamp(now)}_${name}`, name, model: m.id, capo, tempo: out.tempo, notes: out.notes,
-      beats_per_measure: out.beats_per_measure, seconds: out.seconds, backend: out.backend,
+      beats_per_measure: out.beats_per_measure, seconds: out.seconds, backend: out.backend, chords: out.chords,
       created: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
       gp5: out.gp5 };
     try { await store("readwrite", (s) => s.put(r)); } catch (e) { console.warn("not saved:", e); }

@@ -10,7 +10,7 @@ You get a `.gp5` file with the notes on the right strings and frets, laid out on
 
 **What to expect.** On clean recordings about 85% of the notes come out right, with the correct string and fret. Dense 3–4 note chords, quiet inner voices and phone recordings in a reverberant room are much harder. Treat the result as *a first draft to correct by ear*, not as a finished tab.
 
-**What's new in 1.2** (2026-10-31): chord names above the tab, from a small chord model (0.5 MB) that reads the transcribed notes: about 3 in 4 shown chords are right on real fingerstyle songs and 9 in 10 on strummed accompaniment, and chords the model is unsure of are left out. A Chords switch shows or hides them, in the local app and in the browser. All versions are in the [changelog](CHANGELOG.md).
+**What's new in 1.2** (2026-10-31): optional chord names above the tab (`--chords`, or the Chord names option in the local app and the browser), from a small chord model (0.5 MB) that reads the transcribed notes: about 3 in 4 shown chords are right on real fingerstyle songs and 9 in 10 on strummed accompaniment, and chords the model is unsure of are left out. A Chords switch over the tab shows or hides them. All versions are in the [changelog](CHANGELOG.md).
 
 ## Results
 
@@ -62,7 +62,7 @@ The weights are on Hugging Face at [danmor/guitab](https://huggingface.co/danmor
 | `beat_this_final0_int8.onnx` | the larger Beat This! model, used only if you select it (below) | 21 MB |
 | `chord_model.safetensors` | the chord model behind the chord names (`EXPERIMENTS.md`, C1) | 0.5 MB |
 
-**Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (each first download of a tab model is counted on the Hugging Face page, through a request for its small `config.json`; nothing else is sent) (E25, the beat tracker and the chord model for the first transcription, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
+**Nothing to do by hand:** the commands and the web app download the files they need into `weights/` the first time they need them (each first download of a tab model is counted on the Hugging Face page, through a request for its small `config.json`; nothing else is sent) (E25 and the beat tracker for the first transcription, the chord model with `--chords`, the language model with `--music_lm`, another model when you pass its path). To get all of them at once, for example to work offline, download them from the Hugging Face page or with:
 
 ```bash
 uv pip install --python .venv/bin/python huggingface_hub
@@ -89,7 +89,7 @@ The result is `out/my_song/my_song.gp5`, named after the audio file, plus `my_so
 | `--fingering low` | Re-finger towards first position with a Viterbi optimiser. The default, `model`, keeps the model's strings; `auto` re-fingers only clearly awkward shapes. |
 | `--tempo 90` | A fixed tempo instead of following the detected beats. |
 | `--grid 120` | Quantisation grid in ticks (960 = quarter note): 240 = 16ths (default), 120 = 32nds. |
-| `--no_chords` | No chord names above the tab. By default a small chord model names the chords where it is confident (about 3 in 4 right on real fingerstyle songs); without its weights or a connection for the first download, the tab simply has none. |
+| `--chords` | Chord names above the tab, where a small chord model is confident (about 3 in 4 right on real fingerstyle songs, 9 in 10 on strummed accompaniment). Its weights (0.5 MB) are downloaded on first use; without them, the tab simply has none. |
 | `--checkpoint PATH` | Another model. |
 | `--name X` | The output file name. |
 | `--params JSON` | Note-extraction settings (`DEFAULT_PARAMS` in `guitab/inference.py`), e.g. `'{"legato": 5}'`. |

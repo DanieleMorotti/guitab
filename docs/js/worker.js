@@ -133,19 +133,24 @@ async function transcribe({ audio, base, opts }) {
   let chords = null;
   if (opts.chordModel) { // the chord model is tiny: WebAssembly, whose output matches Python's
     progress("chords", 0, "Finding the chords…");
-    const chordSession = await getSession(modelUrl(opts.chordModel.url, base), `chord model (${opts.chordModel.mb} MB)`, false);
-    chords = await suggestChords(notes, grid.beats, downs, opts.capo, async (f) => {
-      const out = await chordSession.run({ pcf: new ort.Tensor("float32", f.pcf, [1, f.n, 6, 12]),
-        glob: new ort.Tensor("float32", f.glob, [1, f.n, 6]) });
-      return await out.logits.getData();
-    }, dsp.chord_bigram);
+    try {
+      const chordSession = await getSession(modelUrl(opts.chordModel.url, base), `chord model (${opts.chordModel.mb} MB)`, false);
+      chords = await suggestChords(notes, grid.beats, downs, opts.capo, async (f) => {
+        const out = await chordSession.run({ pcf: new ort.Tensor("float32", f.pcf, [1, f.n, 6, 12]),
+          glob: new ort.Tensor("float32", f.glob, [1, f.n, 6]) });
+        return await out.logits.getData();
+      }, dsp.chord_bigram);
+    } catch (e) { // e.g. the model could not be downloaded: the tab without chord names
+      console.warn("no chord names:", e);
+      chords = null;
+    }
   }
 
   const weights = opts.fingering === "model" ? null : FINGERING_PRESETS[opts.fingering];
   const tokens = notesToTokens(notes, grid, opts.name, opts.grid, weights, 6, opts.capo, chords);
   if (tokens === null) throw new Error("No notes were transcribed.");
   const gp5 = writeGp5(tokens, dsp.gp5, opts.capo);
-  return { gp5, notes: notes.length, tempo: grid.tempo, beats_per_measure: grid.numBeats, backend,
+  return { gp5, notes: notes.length, tempo: grid.tempo, beats_per_measure: grid.numBeats, backend, chords: !!(chords && chords.length),
     seconds: Math.round((performance.now() - t0) / 100) / 10 };
 }
 

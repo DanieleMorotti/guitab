@@ -13,11 +13,11 @@ from .tab import BeatGrid, detect_beats, notes_to_tokens
 
 def transcribe_to_tab(audio_path, out_dir, stem=None, checkpoint=DEFAULT_CHECKPOINT, device="auto", params=None,
                       music_lm=None, capo=0, tempo="auto", fingering="model", grid=240, write_tokens=True, log=print,
-                      chords=True):
+                      chords=False):
     """Write <out_dir>/<stem>.gp5 (and the tab as text tokens, <stem>.tokens.txt, if write_tokens). params: note-extraction settings (inference.DEFAULT_PARAMS keys);
     music_lm: None or tab-LM decoding settings (lam, beta); tempo: "auto" (beat tracking) or BPM; fingering: model / auto /
     low; chords: chord names above the parts where the chord model is confident (guitab.chords; none without its
-    weights). Returns {"gp5", "tokens", "notes", "tempo", "beats_per_measure"}; raises ValueError if no note was found."""
+    weights or a connection for their first download). Returns {"gp5", "tokens", "notes", "tempo", "beats_per_measure"}; raises ValueError if no note was found."""
     audio_path = Path(audio_path).resolve()
     device = str(pick_device(device))
     notes, onset = transcribe_file(str(checkpoint), audio_path, device, params or {}, music_lm, with_onset=True)
